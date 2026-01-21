@@ -1,0 +1,157 @@
+The Concept: Upload a PDF book → AI analyzes it → Generates a structured online course with chapters, lessons, and quizzes.
+
+
+ Who It Appeals To
+  ┌─────────────────┬──────────────────────────────────────────────────────────────┐
+  │    Audience     │                           Use Case                           │
+  ├─────────────────┼──────────────────────────────────────────────────────────────┤
+  │ Students        │ Turn textbooks into digestible courses with built-in quizzes │
+  ├─────────────────┼──────────────────────────────────────────────────────────────┤
+  │ Self-learners   │ Convert technical books/manuals into structured learning     │
+  ├─────────────────┼──────────────────────────────────────────────────────────────┤
+  │ Professionals   │ Transform industry guides into training material             │
+  ├─────────────────┼──────────────────────────────────────────────────────────────┤
+  │ Teachers/Tutors │ Quickly generate course content from reference books         │
+  ├─────────────────┼──────────────────────────────────────────────────────────────┤
+  │ Book readers    │ Active learning instead of passive reading                   │
+  └─────────────────┴──────────────────────────────────────────────────────────────┘
+
+
+
+ Tech Stack
+
+  - Frontend: Next.js + Tailwind CSS
+  - Backend: FastAPI (Python)
+  - Database/Auth/Storage: Supabase
+  - AI: OpenRouter (using Gemini Flash for cheap, fast generation)
+
+
+ Phase-by-Phase AI Usage
+  ┌─────────────────────┬──────────────┬───────────────────────────────┬────────────────────────────────────────────────────────┬──────────────┐
+  │        Phase        │   AI Task    │             Input             │                         Output                         │   AI Calls   │
+  ├─────────────────────┼──────────────┼───────────────────────────────┼────────────────────────────────────────────────────────┼──────────────┤
+  │ 1. Chunking         │ None         │ Full text                     │ Text chunks                                            │ 0            │
+  ├─────────────────────┼──────────────┼───────────────────────────────┼────────────────────────────────────────────────────────┼──────────────┤
+  │ 2. Summarize Chunks │ Gemini Flash │ 25K chars per chunk           │ Topics, concepts, summary                              │ 1 per chunk  │
+  ├─────────────────────┼──────────────┼───────────────────────────────┼────────────────────────────────────────────────────────┼──────────────┤
+  │ 3. Book Overview    │ Gemini Flash │ All summaries combined        │ Unified themes, recommended chapters                   │ 1            │
+  ├─────────────────────┼──────────────┼───────────────────────────────┼────────────────────────────────────────────────────────┼──────────────┤
+  │ 4. Course Structure │ Gemini Flash │ Book overview JSON            │ Chapters, lessons, mapping                             │ 1            │
+  ├─────────────────────┼──────────────┼───────────────────────────────┼────────────────────────────────────────────────────────┼──────────────┤
+  │ 5a. Lesson Content  │ Gemini Flash │ Chapter info + relevant chunk │ Introduction, explanation, examples, mistakes, summary │ 1 per lesson │
+  ├─────────────────────┼──────────────┼───────────────────────────────┼────────────────────────────────────────────────────────┼──────────────┤
+  │ 5b. Quiz Generation │ Gemini Flash │ Lesson title + relevant chunk │ 5 MCQs + 2 short answer                                │ 1 per lesson │
+  └─────────────────────┴──────────────┴───────────────────────────────┴────────────────────────────────────────────────────────┴──────────────┘
+  ---
+  What Each AI Call Does
+
+  1. Chunk Summary (per chunk)
+  IN:  "Chapter 3: The brain is divided into regions..."
+  OUT: {
+    "main_topics": ["Brain anatomy", "Neural pathways"],
+    "key_concepts": [{"term": "Cerebral cortex", "brief": "Outer brain layer"}],
+    "summary": "This section covers brain structure..."
+  }
+
+  2. Book Overview (once)
+  IN:  All chunk summaries combined
+  OUT: {
+    "book_title": "Introduction to Neuroscience",
+    "main_themes": ["Brain structure", "Neural function", "Behavior"],
+    "recommended_chapters": [...]
+  }
+
+  3. Course Structure (once)
+  IN:  Book overview
+  OUT: {
+    "course_title": "Neuroscience Fundamentals",
+    "chapters": [
+      {
+        "chapter_title": "Brain Anatomy",
+        "source_sections": [1, 2],
+        "lessons": [...]
+      }
+    ]
+  }
+
+  4. Lesson Content (per lesson)
+  IN:  Chapter title, lesson title, goals, relevant text chunk
+  OUT: {
+    "introduction": "The cerebral cortex is...",
+    "explanation": "Detailed multi-paragraph content...",
+    "examples": [...],
+    "common_mistakes": [...],
+    "summary": [...]
+  }
+
+  5. Quiz (per lesson)
+  IN:  Lesson title, relevant text chunk
+  OUT: {
+    "mcq": [
+      {
+        "question": "What is the cerebral cortex?",
+        "options": ["A)...", "B)...", "C)...", "D)..."],
+        "correct": "B",
+        "explanation": "..."
+      }
+    ],
+    "short_answer": [...]
+  }
+
+  ---
+  Example: 300-page Psychology Textbook
+
+  Book: 300 pages → ~450K characters
+  Chunks: 15 chunks (30K each)
+  Course: 5 chapters × 3 lessons = 15 lessons
+
+
+Course Structure Inspiration:
+Coursera / edX
+
+Weeks → Modules → Lessons → Quizzes
+Clear progress tracking
+Estimated time per section
+"You're 40% complete" motivation
+
+Brilliant.org
+
+Bite-sized interactive lessons
+Concept → Example → Practice flow
+Very visual, not walls of text
+
+Duolingo
+
+Gamified progress (streaks, XP)
+Short daily sessions
+Clear skill tree progression
+
+
+Lesson Structure Inspiration:
+Notion / Almanack of Naval
+
+Clean, minimal reading experience
+Key takeaways highlighted
+Pull quotes for important concepts
+
+Blinkist
+
+Book → Key insights (not full content)
+"What you'll learn" upfront
+15-min summaries
+
+Readwise Reader
+
+Highlights + spaced repetition
+"Resurface what you learned"
+
+
+Website/UI Inspiration:
+SiteSteal thisCourseraCourse cards, progress barsNotionClean typography, sidebar navLinear.appMinimalist, fast, polishedBrilliantFriendly illustrations, approachableTeachableCreator dashboard, simple course builder
+
+Your unique angle:
+Unlike Coursera/Udemy → AI generates the course from YOUR content
+Unlike Blinkist → Full learning, not just summaries
+Unlike ChatGPT → Structured progression, not just Q&A
+
+My suggestion: Look at Brilliant.org for lesson UX and Coursera for course structure. Combine with your AI-generated content.
