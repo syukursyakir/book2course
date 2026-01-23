@@ -10,10 +10,10 @@ router = APIRouter(prefix="/api/billing", tags=["billing"])
 # Initialize Stripe
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
-# Price IDs for each plan (renamed from tier to plan for credit system)
+# Price IDs for each plan
 PRICE_IDS = {
-    "starter": os.getenv("STRIPE_STARTER_PRICE_ID"),  # $9.90 - 30 credits
-    "pro": os.getenv("STRIPE_PRO_PRICE_ID"),          # $24.90 - 100 credits
+    "starter": os.getenv("STRIPE_BASIC_PRICE_ID"),   # $9.90/month - 30 credits
+    "pro": os.getenv("STRIPE_PRO_PRICE_ID"),         # $24.90/month - 100 credits
 }
 
 # Credits granted per plan
