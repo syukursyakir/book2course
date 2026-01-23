@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-export default function SignupPage() {
+function SignupRedirect() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
@@ -14,4 +14,12 @@ export default function SignupPage() {
   }, [router, searchParams])
 
   return null
+}
+
+export default function SignupPage() {
+  return (
+    <Suspense fallback={null}>
+      <SignupRedirect />
+    </Suspense>
+  )
 }
