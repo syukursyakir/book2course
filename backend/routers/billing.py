@@ -3,17 +3,23 @@ import stripe
 from fastapi import APIRouter, HTTPException, Depends, Request, Header
 from typing import Optional
 from routers.auth import get_current_user
-from services.supabase_client import get_supabase_client
+from services.supabase_client import get_supabase_client, add_credits
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
 
 # Initialize Stripe
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
 
-# Price IDs for each tier
+# Price IDs for each plan (renamed from tier to plan for credit system)
 PRICE_IDS = {
-    "basic": os.getenv("STRIPE_BASIC_PRICE_ID"),
-    "pro": os.getenv("STRIPE_PRO_PRICE_ID"),
+    "starter": os.getenv("STRIPE_STARTER_PRICE_ID"),  # $9.90 - 30 credits
+    "pro": os.getenv("STRIPE_PRO_PRICE_ID"),          # $24.90 - 100 credits
+}
+
+# Credits granted per plan
+CREDITS_PER_PLAN = {
+    "starter": 30,
+    "pro": 100,
 }
 
 # Frontend URL for redirects
@@ -48,16 +54,16 @@ async def get_or_create_stripe_customer(user_id: str, email: str) -> str:
 
 @router.post("/create-checkout-session")
 async def create_checkout_session(
-    tier: str,
+    plan: str,
     user: dict = Depends(get_current_user)
 ):
-    """Create a Stripe Checkout session for subscription."""
-    if tier not in PRICE_IDS:
-        raise HTTPException(status_code=400, detail="Invalid tier. Must be 'basic' or 'pro'")
+    """Create a Stripe Checkout session for credit purchase."""
+    if plan not in PRICE_IDS:
+        raise HTTPException(status_code=400, detail="Invalid plan. Must be 'starter' or 'pro'")
 
-    price_id = PRICE_IDS[tier]
+    price_id = PRICE_IDS[plan]
     if not price_id:
-        raise HTTPException(status_code=500, detail=f"Price ID not configured for tier: {tier}")
+        raise HTTPException(status_code=500, detail=f"Price ID not configured for plan: {plan}")
 
     try:
         # Get or create Stripe customer
@@ -66,7 +72,7 @@ async def create_checkout_session(
             user.get("email", "")
         )
 
-        # Create checkout session
+        # Create checkout session (one-time payment, not subscription)
         session = stripe.checkout.Session.create(
             customer=customer_id,
             payment_method_types=["card"],
@@ -74,12 +80,13 @@ async def create_checkout_session(
                 "price": price_id,
                 "quantity": 1,
             }],
-            mode="subscription",
-            success_url=f"{FRONTEND_URL}/dashboard?subscription=success",
-            cancel_url=f"{FRONTEND_URL}/pricing?subscription=cancelled",
+            mode="payment",  # Changed to one-time payment for credits
+            success_url=f"{FRONTEND_URL}/dashboard?purchase=success&credits={CREDITS_PER_PLAN.get(plan, 0)}",
+            cancel_url=f"{FRONTEND_URL}/pricing?purchase=cancelled",
             metadata={
                 "user_id": user["id"],
-                "tier": tier
+                "plan": plan,
+                "credits": str(CREDITS_PER_PLAN.get(plan, 0))
             }
         )
 
@@ -116,37 +123,15 @@ async def create_portal_session(user: dict = Depends(get_current_user)):
 
 @router.get("/subscription")
 async def get_subscription(user: dict = Depends(get_current_user)):
-    """Get current user's subscription status."""
-    client = get_supabase_client()
+    """Get current user's credit balance and info."""
+    from services.supabase_client import get_user_credits, CREDIT_COST_BOOK, CREDIT_COST_NOTES
 
-    result = client.table("profiles").select("*").eq("user_id", user["id"]).execute()
-
-    if not result.data:
-        return {
-            "tier": "free",
-            "status": None,
-            "current_period_end": None
-        }
-
-    profile = result.data[0]
-
-    # If user has an active subscription, get details from Stripe
-    if profile.get("stripe_subscription_id"):
-        try:
-            subscription = stripe.Subscription.retrieve(profile["stripe_subscription_id"])
-            return {
-                "tier": profile.get("tier", "free"),
-                "status": subscription.status,
-                "current_period_end": subscription.current_period_end,
-                "cancel_at_period_end": subscription.cancel_at_period_end
-            }
-        except stripe.error.StripeError:
-            pass
+    credits = await get_user_credits(user["id"])
 
     return {
-        "tier": profile.get("tier", "free"),
-        "status": profile.get("subscription_status"),
-        "current_period_end": None
+        "credits": credits,
+        "book_cost": CREDIT_COST_BOOK,
+        "notes_cost": CREDIT_COST_NOTES
     }
 
 
@@ -195,111 +180,49 @@ async def stripe_webhook(
 
 
 async def handle_checkout_completed(session: dict):
-    """Handle successful checkout - activate subscription."""
+    """Handle successful checkout - add credits to user."""
     client = get_supabase_client()
 
     user_id = session.get("metadata", {}).get("user_id")
-    tier = session.get("metadata", {}).get("tier")
-    subscription_id = session.get("subscription")
+    plan = session.get("metadata", {}).get("plan")
+    credits_str = session.get("metadata", {}).get("credits", "0")
     customer_id = session.get("customer")
 
     if not user_id:
         print(f"[STRIPE] Warning: No user_id in checkout session metadata")
         return
 
-    # Update user profile with subscription info
+    # Parse credits from metadata
+    try:
+        credits_to_add = int(credits_str)
+    except ValueError:
+        credits_to_add = CREDITS_PER_PLAN.get(plan, 0)
+
+    # Add credits to user
+    new_balance = await add_credits(user_id, credits_to_add)
+
+    # Update profile with customer ID
     client.table("profiles").upsert({
         "user_id": user_id,
         "stripe_customer_id": customer_id,
-        "stripe_subscription_id": subscription_id,
-        "tier": tier or "basic",
-        "subscription_status": "active"
     }, on_conflict="user_id").execute()
 
-    print(f"[STRIPE] User {user_id} subscribed to {tier} plan")
+    print(f"[STRIPE] User {user_id} purchased {plan} plan. Added {credits_to_add} credits. New balance: {new_balance}")
 
 
 async def handle_subscription_updated(subscription: dict):
-    """Handle subscription updates (upgrades, downgrades, renewals)."""
-    client = get_supabase_client()
-
-    subscription_id = subscription["id"]
-    status = subscription["status"]
-
-    # Find user by subscription ID
-    result = client.table("profiles").select("user_id").eq(
-        "stripe_subscription_id", subscription_id
-    ).execute()
-
-    if not result.data:
-        print(f"[STRIPE] Warning: No user found for subscription {subscription_id}")
-        return
-
-    user_id = result.data[0]["user_id"]
-
-    # Determine tier from price
-    price_id = subscription["items"]["data"][0]["price"]["id"]
-    tier = "free"
-    for tier_name, configured_price_id in PRICE_IDS.items():
-        if configured_price_id == price_id:
-            tier = tier_name
-            break
-
-    # Update profile
-    update_data = {
-        "subscription_status": status,
-        "tier": tier if status == "active" else "free"
-    }
-
-    client.table("profiles").update(update_data).eq("user_id", user_id).execute()
-    print(f"[STRIPE] Updated user {user_id} subscription: status={status}, tier={tier}")
+    """Handle subscription updates (for future subscription-based features)."""
+    # Currently using one-time payments for credits, so this is a no-op
+    print(f"[STRIPE] Subscription updated: {subscription['id']}")
 
 
 async def handle_subscription_deleted(subscription: dict):
-    """Handle subscription cancellation."""
-    client = get_supabase_client()
-
-    subscription_id = subscription["id"]
-
-    # Find user by subscription ID
-    result = client.table("profiles").select("user_id").eq(
-        "stripe_subscription_id", subscription_id
-    ).execute()
-
-    if not result.data:
-        return
-
-    user_id = result.data[0]["user_id"]
-
-    # Downgrade to free
-    client.table("profiles").update({
-        "tier": "free",
-        "subscription_status": "canceled",
-        "stripe_subscription_id": None
-    }).eq("user_id", user_id).execute()
-
-    print(f"[STRIPE] User {user_id} subscription canceled, downgraded to free")
+    """Handle subscription cancellation (for future subscription-based features)."""
+    # Currently using one-time payments for credits, so this is a no-op
+    print(f"[STRIPE] Subscription deleted: {subscription['id']}")
 
 
 async def handle_payment_failed(invoice: dict):
     """Handle failed payment."""
-    client = get_supabase_client()
-
     customer_id = invoice.get("customer")
-
-    # Find user by customer ID
-    result = client.table("profiles").select("user_id").eq(
-        "stripe_customer_id", customer_id
-    ).execute()
-
-    if not result.data:
-        return
-
-    user_id = result.data[0]["user_id"]
-
-    # Update status to past_due
-    client.table("profiles").update({
-        "subscription_status": "past_due"
-    }).eq("user_id", user_id).execute()
-
-    print(f"[STRIPE] Payment failed for user {user_id}")
+    print(f"[STRIPE] Payment failed for customer {customer_id}")

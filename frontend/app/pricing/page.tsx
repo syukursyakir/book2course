@@ -4,24 +4,20 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Navbar } from '@/components/layout'
 import { Button } from '@/components/ui'
-import { Check, X, Crown, Zap, Sparkles, Loader2 } from 'lucide-react'
+import { Check, Crown, Zap, Sparkles, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase'
 import { api } from '@/lib/api'
 
-interface PlanFeature {
-  text: string
-  included: boolean
-}
-
 interface Plan {
   name: string
-  tier: 'free' | 'basic' | 'pro'
+  id: 'free' | 'starter' | 'pro'
   price: string
   period: string
+  credits: number
   description: string
-  features: PlanFeature[]
+  highlights: string[]
   cta: string
   popular?: boolean
   icon: React.ReactNode
@@ -30,61 +26,52 @@ interface Plan {
 const plans: Plan[] = [
   {
     name: 'Free',
-    tier: 'free',
+    id: 'free',
     price: '$0',
-    period: 'forever',
-    description: 'Perfect for trying out Book2Course',
+    period: '',
+    credits: 5,
+    description: 'Try Book2Course risk-free',
     icon: <Zap className="w-6 h-6" />,
-    features: [
-      { text: '2 notes uploads/month', included: true },
-      { text: 'Basic quiz (4 questions)', included: true },
-      { text: 'Standard processing', included: true },
-      { text: 'Book uploads', included: false },
-      { text: 'Chapter selection', included: false },
-      { text: 'AI-enhanced content', included: false },
-      { text: 'Full quiz (7+ questions)', included: false },
-      { text: 'Common mistakes section', included: false },
+    highlights: [
+      '5 credits on signup',
+      '5 notes uploads OR 1 book',
+      'All features included',
+      'No credit card required',
     ],
     cta: 'Get Started',
   },
   {
-    name: 'Basic',
-    tier: 'basic',
-    price: '$9',
-    period: '/month',
-    description: 'For students and self-learners',
+    name: 'Starter',
+    id: 'starter',
+    price: '$9.90',
+    period: '',
+    credits: 30,
+    description: 'Perfect for students',
     icon: <Sparkles className="w-6 h-6" />,
     popular: true,
-    features: [
-      { text: '20 notes uploads/month', included: true },
-      { text: '10 book uploads/month', included: true },
-      { text: 'Chapter selection', included: true },
-      { text: 'Full quiz (7+ questions)', included: true },
-      { text: 'AI quality detection', included: true },
-      { text: 'Enhanced content mode', included: true },
-      { text: 'Common mistakes section', included: true },
-      { text: 'Before you move on checklist', included: true },
+    highlights: [
+      '30 credits',
+      '30 notes OR 6 books',
+      'Chapter selection for books',
+      'Credits never expire',
     ],
-    cta: 'Start Basic',
+    cta: 'Buy Starter',
   },
   {
     name: 'Pro',
-    tier: 'pro',
-    price: '$24',
-    period: '/month',
-    description: 'For power users and professionals',
+    id: 'pro',
+    price: '$24.90',
+    period: '',
+    credits: 100,
+    description: 'Best value for power users',
     icon: <Crown className="w-6 h-6" />,
-    features: [
-      { text: 'Unlimited notes uploads', included: true },
-      { text: 'Unlimited book uploads', included: true },
-      { text: 'Chapter selection', included: true },
-      { text: 'Full quiz (7+ questions)', included: true },
-      { text: 'AI quality detection', included: true },
-      { text: 'Enhanced content mode', included: true },
-      { text: 'Priority processing queue', included: true },
-      { text: 'All premium features', included: true },
+    highlights: [
+      '100 credits',
+      '100 notes OR 20 books',
+      'Priority processing',
+      'Best price per credit',
     ],
-    cta: 'Start Pro',
+    cta: 'Buy Pro',
   },
 ]
 
@@ -97,26 +84,26 @@ export default function PricingPage() {
     setError(null)
 
     // Free plan - just go to signup
-    if (plan.tier === 'free') {
-      router.push('/signup')
+    if (plan.id === 'free') {
+      router.push('/auth')
       return
     }
 
     // Paid plans - need to check auth and create checkout session
-    setLoadingTier(plan.tier)
+    setLoadingTier(plan.id)
 
     try {
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
 
       if (!session) {
-        // Not logged in - redirect to signup with redirect back
-        router.push(`/signup?redirect=/pricing&plan=${plan.tier}`)
+        // Not logged in - redirect to auth with redirect back
+        router.push(`/auth?redirect=/pricing&plan=${plan.id}`)
         return
       }
 
       // Create checkout session
-      const result = await api.createCheckoutSession(plan.tier, session.access_token)
+      const result = await api.createCheckoutSession(plan.id, session.access_token)
 
       if (result.error) {
         setError(result.error)
@@ -172,13 +159,13 @@ export default function PricingPage() {
                 {plan.popular && (
                   <div className="absolute -top-4 left-1/2 -translate-x-1/2">
                     <span className="bg-primary-500 text-white text-sm font-medium px-4 py-1 rounded-full">
-                      Most Popular
+                      Best Value
                     </span>
                   </div>
                 )}
 
                 {/* Plan Header */}
-                <div className="mb-8">
+                <div className="mb-6">
                   <div className={cn(
                     'w-12 h-12 rounded-xl flex items-center justify-center mb-4',
                     plan.popular
@@ -191,10 +178,18 @@ export default function PricingPage() {
                   <p className="text-dark-500 mt-1">{plan.description}</p>
                 </div>
 
+                {/* Credits Badge */}
+                <div className="mb-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-dark-800 text-dark-200">
+                  <span className="text-lg font-bold text-primary-500">{plan.credits}</span>
+                  <span className="text-sm">credits</span>
+                </div>
+
                 {/* Price */}
-                <div className="mb-8">
+                <div className="mb-6">
                   <span className="text-4xl font-bold text-dark-100">{plan.price}</span>
-                  <span className="text-dark-500">{plan.period}</span>
+                  {plan.id !== 'free' && (
+                    <span className="text-dark-500 ml-2 text-sm">one-time</span>
+                  )}
                 </div>
 
                 {/* CTA Button */}
@@ -204,7 +199,7 @@ export default function PricingPage() {
                   onClick={() => handlePlanClick(plan)}
                   disabled={loadingTier !== null}
                 >
-                  {loadingTier === plan.tier ? (
+                  {loadingTier === plan.id ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                       Processing...
@@ -214,25 +209,42 @@ export default function PricingPage() {
                   )}
                 </Button>
 
-                {/* Features */}
-                <ul className="space-y-4">
-                  {plan.features.map((feature, index) => (
+                {/* Highlights */}
+                <ul className="space-y-3">
+                  {plan.highlights.map((highlight, index) => (
                     <li key={index} className="flex items-start gap-3">
-                      {feature.included ? (
-                        <Check className="w-5 h-5 text-primary-500 flex-shrink-0 mt-0.5" />
-                      ) : (
-                        <X className="w-5 h-5 text-dark-600 flex-shrink-0 mt-0.5" />
-                      )}
-                      <span className={cn(
-                        feature.included ? 'text-dark-300' : 'text-dark-600'
-                      )}>
-                        {feature.text}
-                      </span>
+                      <Check className="w-5 h-5 text-primary-500 flex-shrink-0 mt-0.5" />
+                      <span className="text-dark-300">{highlight}</span>
                     </li>
                   ))}
                 </ul>
               </div>
             ))}
+          </div>
+
+          {/* Credit Cost Info */}
+          <div className="mt-12 bg-dark-900 border border-dark-800 rounded-2xl p-8">
+            <h3 className="text-lg font-semibold text-dark-100 mb-4 text-center">How Credits Work</h3>
+            <div className="grid sm:grid-cols-2 gap-6 max-w-2xl mx-auto">
+              <div className="flex items-center gap-4 p-4 bg-dark-800/50 rounded-xl">
+                <div className="w-12 h-12 bg-blue-500/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <span className="text-xl font-bold text-blue-500">1</span>
+                </div>
+                <div>
+                  <p className="font-medium text-dark-200">Notes Upload</p>
+                  <p className="text-sm text-dark-400">Quick processing for short docs</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 p-4 bg-dark-800/50 rounded-xl">
+                <div className="w-12 h-12 bg-primary-500/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                  <span className="text-xl font-bold text-primary-500">5</span>
+                </div>
+                <div>
+                  <p className="font-medium text-dark-200">Book Upload</p>
+                  <p className="text-sm text-dark-400">Full processing with chapters</p>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* FAQ or Additional Info */}

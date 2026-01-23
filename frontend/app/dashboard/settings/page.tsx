@@ -10,17 +10,10 @@ import {
   Camera,
   Check,
   X,
-  Moon,
-  Sun,
-  Bell,
-  BellOff,
-  Globe,
-  Key,
   Trash2,
   AlertTriangle
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
-import { cn } from '@/lib/utils'
 
 export default function SettingsPage() {
   const router = useRouter()
@@ -38,11 +31,6 @@ export default function SettingsPage() {
   const [isEditingName, setIsEditingName] = useState(false)
   const [editedName, setEditedName] = useState('')
   const [isSavingName, setIsSavingName] = useState(false)
-
-  // Preferences
-  const [darkMode, setDarkMode] = useState(true)
-  const [emailNotifications, setEmailNotifications] = useState(true)
-  const [language, setLanguage] = useState('en')
 
   // Actions
   const [isSigningOut, setIsSigningOut] = useState(false)
@@ -284,117 +272,16 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Preferences Section */}
-      <div className="bg-dark-900 border border-dark-800 rounded-2xl p-8 mb-6">
-        <h2 className="text-xl font-semibold text-dark-100 mb-6">Preferences</h2>
-
-        <div className="space-y-1">
-          {/* Theme Toggle */}
-          <div className="flex items-center justify-between py-4">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-dark-800 rounded-xl flex items-center justify-center">
-                {darkMode ? (
-                  <Moon className="w-6 h-6 text-blue-400" />
-                ) : (
-                  <Sun className="w-6 h-6 text-yellow-400" />
-                )}
-              </div>
-              <div>
-                <p className="text-dark-100 font-medium">Dark Mode</p>
-                <p className="text-dark-500 text-sm">Use dark theme across the app</p>
-              </div>
-            </div>
-            <button
-              onClick={() => setDarkMode(!darkMode)}
-              className={cn(
-                'relative w-14 h-8 rounded-full transition-colors',
-                darkMode ? 'bg-primary-500' : 'bg-dark-700'
-              )}
-            >
-              <span className={cn(
-                'absolute top-1 w-6 h-6 bg-white rounded-full transition-transform',
-                darkMode ? 'translate-x-7' : 'translate-x-1'
-              )} />
-            </button>
-          </div>
-
-          {/* Email Notifications */}
-          <div className="flex items-center justify-between py-4 border-t border-dark-800">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-dark-800 rounded-xl flex items-center justify-center">
-                {emailNotifications ? (
-                  <Bell className="w-6 h-6 text-green-400" />
-                ) : (
-                  <BellOff className="w-6 h-6 text-dark-500" />
-                )}
-              </div>
-              <div>
-                <p className="text-dark-100 font-medium">Email Notifications</p>
-                <p className="text-dark-500 text-sm">Receive updates about your courses</p>
-              </div>
-            </div>
-            <button
-              onClick={() => setEmailNotifications(!emailNotifications)}
-              className={cn(
-                'relative w-14 h-8 rounded-full transition-colors',
-                emailNotifications ? 'bg-primary-500' : 'bg-dark-700'
-              )}
-            >
-              <span className={cn(
-                'absolute top-1 w-6 h-6 bg-white rounded-full transition-transform',
-                emailNotifications ? 'translate-x-7' : 'translate-x-1'
-              )} />
-            </button>
-          </div>
-
-          {/* Language */}
-          <div className="flex items-center justify-between py-4 border-t border-dark-800">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-dark-800 rounded-xl flex items-center justify-center">
-                <Globe className="w-6 h-6 text-purple-400" />
-              </div>
-              <div>
-                <p className="text-dark-100 font-medium">Language</p>
-                <p className="text-dark-500 text-sm">Choose your preferred language</p>
-              </div>
-            </div>
-            <select
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-              className="px-4 py-2 bg-dark-800 border border-dark-700 rounded-lg text-dark-100 focus:outline-none focus:ring-2 focus:ring-primary-500 cursor-pointer"
-            >
-              <option value="en">English</option>
-              <option value="es">Español</option>
-              <option value="fr">Français</option>
-              <option value="de">Deutsch</option>
-              <option value="zh">中文</option>
-              <option value="ja">日本語</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
       {/* Account Section */}
       <div className="bg-dark-900 border border-dark-800 rounded-2xl p-8">
         <h2 className="text-xl font-semibold text-dark-100 mb-6">Account</h2>
 
         <div className="space-y-1">
-          {/* Change Password */}
-          <button className="w-full flex items-center gap-4 py-4 text-left hover:bg-dark-800/50 -mx-4 px-4 rounded-lg transition-colors">
-            <div className="w-12 h-12 bg-dark-800 rounded-xl flex items-center justify-center">
-              <Key className="w-6 h-6 text-dark-400" />
-            </div>
-            <div>
-              <p className="text-dark-100 font-medium">Change Password</p>
-              <p className="text-dark-500 text-sm">Update your account password</p>
-            </div>
-          </button>
-
           {/* Sign Out */}
           <button
             onClick={handleSignOut}
             disabled={isSigningOut}
-            className="w-full flex items-center gap-4 py-4 text-left hover:bg-dark-800/50 -mx-4 px-4 rounded-lg transition-colors border-t border-dark-800 disabled:opacity-50"
+            className="w-full flex items-center gap-4 py-4 text-left hover:bg-dark-800/50 -mx-4 px-4 rounded-lg transition-colors disabled:opacity-50"
           >
             <div className="w-12 h-12 bg-dark-800 rounded-xl flex items-center justify-center">
               {isSigningOut ? (

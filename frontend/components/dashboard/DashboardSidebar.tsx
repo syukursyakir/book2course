@@ -11,7 +11,6 @@ import {
   CreditCard,
   HelpCircle,
   ChevronUp,
-  Crown,
   X,
   Library
 } from 'lucide-react'
@@ -37,18 +36,9 @@ const secondaryNavItems: NavItem[] = [
 ]
 
 interface UsageData {
-  tier: string
-  can_upload_books: boolean
-  books_remaining: number | null
-  notes_remaining: number | null
-  usage: {
-    books_this_month: number
-    notes_this_month: number
-  }
-  limits: {
-    books_limit: number | null
-    notes_limit: number | null
-  }
+  credits: number
+  book_cost: number
+  notes_cost: number
 }
 
 interface DashboardSidebarProps {
@@ -67,24 +57,18 @@ export function DashboardSidebar({ usageData, isOpen, onClose }: DashboardSideba
     return pathname.startsWith(href)
   }
 
-  const getTierColor = (tier: string) => {
-    switch (tier) {
-      case 'pro': return 'bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border-yellow-500/30'
-      case 'basic': return 'bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border-blue-500/30'
-      default: return 'bg-dark-800/50 border-dark-700'
-    }
+  const getCreditsColor = (credits: number) => {
+    if (credits >= 50) return 'bg-gradient-to-r from-green-500/20 to-emerald-500/20 border-green-500/30'
+    if (credits >= 10) return 'bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border-blue-500/30'
+    if (credits > 0) return 'bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border-yellow-500/30'
+    return 'bg-gradient-to-r from-red-500/20 to-pink-500/20 border-red-500/30'
   }
 
-  const getTierTextColor = (tier: string) => {
-    switch (tier) {
-      case 'pro': return 'text-yellow-500'
-      case 'basic': return 'text-blue-400'
-      default: return 'text-dark-300'
-    }
-  }
-
-  const formatTier = (tier: string) => {
-    return tier.charAt(0).toUpperCase() + tier.slice(1) + ' Plan'
+  const getCreditsTextColor = (credits: number) => {
+    if (credits >= 50) return 'text-green-500'
+    if (credits >= 10) return 'text-blue-400'
+    if (credits > 0) return 'text-yellow-500'
+    return 'text-red-400'
   }
 
   return (
@@ -167,55 +151,40 @@ export function DashboardSidebar({ usageData, isOpen, onClose }: DashboardSideba
           </div>
         </nav>
 
-        {/* Plan Badge at Bottom */}
+        {/* Credits Badge at Bottom */}
         <div className="p-4 border-t border-dark-800">
           {usageData ? (
             <div className={cn(
               'rounded-xl p-4 border',
-              getTierColor(usageData.tier)
+              getCreditsColor(usageData.credits)
             )}>
-              <div className="flex items-center gap-2 mb-2">
-                {usageData.tier !== 'free' && (
-                  <Crown className={cn('w-4 h-4', getTierTextColor(usageData.tier))} />
-                )}
-                <span className={cn('text-sm font-semibold', getTierTextColor(usageData.tier))}>
-                  {formatTier(usageData.tier)}
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-medium text-dark-300">Credits</span>
+                <span className={cn('text-2xl font-bold', getCreditsTextColor(usageData.credits))}>
+                  {usageData.credits}
                 </span>
               </div>
 
-              {/* Usage info */}
-              <div className="space-y-1 mb-3">
-                {usageData.limits.notes_limit !== null && (
-                  <div className="flex justify-between text-xs">
-                    <span className="text-dark-400">Notes</span>
-                    <span className="text-dark-300">
-                      {usageData.usage.notes_this_month}/{usageData.limits.notes_limit}
-                    </span>
-                  </div>
-                )}
-                {usageData.can_upload_books && usageData.limits.books_limit !== null && (
-                  <div className="flex justify-between text-xs">
-                    <span className="text-dark-400">Books</span>
-                    <span className="text-dark-300">
-                      {usageData.usage.books_this_month}/{usageData.limits.books_limit}
-                    </span>
-                  </div>
-                )}
-                {usageData.tier === 'pro' && (
-                  <div className="text-xs text-dark-400">Unlimited uploads</div>
-                )}
+              {/* Cost info */}
+              <div className="space-y-1.5 mb-4">
+                <div className="flex justify-between text-xs">
+                  <span className="text-dark-400">Book upload</span>
+                  <span className="text-dark-300">{usageData.book_cost} credits</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-dark-400">Notes upload</span>
+                  <span className="text-dark-300">{usageData.notes_cost} credit</span>
+                </div>
               </div>
 
-              {/* Upgrade button for non-pro users */}
-              {usageData.tier !== 'pro' && (
-                <Link
-                  href="/pricing"
-                  className="flex items-center justify-center gap-1 w-full py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium rounded-lg transition-colors"
-                >
-                  <ChevronUp className="w-4 h-4" />
-                  Upgrade
-                </Link>
-              )}
+              {/* Buy credits button */}
+              <Link
+                href="/pricing"
+                className="flex items-center justify-center gap-1 w-full py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                <ChevronUp className="w-4 h-4" />
+                Buy Credits
+              </Link>
             </div>
           ) : (
             <div className="rounded-xl p-4 bg-dark-800/50 border border-dark-700 animate-pulse">

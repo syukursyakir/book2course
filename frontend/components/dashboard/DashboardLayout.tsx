@@ -7,18 +7,9 @@ import { DashboardSidebar } from './DashboardSidebar'
 import { createClient } from '@/lib/supabase'
 
 interface UsageData {
-  tier: string
-  can_upload_books: boolean
-  books_remaining: number | null
-  notes_remaining: number | null
-  usage: {
-    books_this_month: number
-    notes_this_month: number
-  }
-  limits: {
-    books_limit: number | null
-    notes_limit: number | null
-  }
+  credits: number
+  book_cost: number
+  notes_cost: number
 }
 
 interface DashboardLayoutProps {

@@ -7,8 +7,8 @@ from services.supabase_client import (
     create_book,
     check_upload_allowed,
     get_user_usage,
-    get_user_tier,
-    get_tier_limits,
+    deduct_credits,
+    get_credit_cost,
 )
 from services.pdf_processor import get_pdf_metadata
 from services.queue_worker import queue_worker
@@ -26,23 +26,35 @@ async def upload_pdf(
     """Upload a PDF and add it to the processing queue.
 
     upload_type: 'book' or 'notes'
-    - notes: Process immediately (smaller documents)
-    - book: Will support chapter selection in future
+    - notes: Process immediately (1 credit)
+    - book: Chapter selection first (5 credits)
     """
     # Validate upload_type
     if upload_type not in ("book", "notes"):
         upload_type = "notes"
 
-    # Check upload limits before processing
+    # Check if user has enough credits
     upload_check = await check_upload_allowed(user["id"], upload_type)
     if not upload_check["allowed"]:
         raise HTTPException(status_code=403, detail=upload_check["reason"])
 
+    # Deduct credits BEFORE processing
+    credit_cost = get_credit_cost(upload_type)
+    deducted = await deduct_credits(user["id"], credit_cost)
+    if not deducted:
+        raise HTTPException(status_code=403, detail="Failed to deduct credits. Please try again.")
+
     # Validate file
     if not file.filename.lower().endswith('.pdf'):
+        # Refund credits on validation failure
+        from services.supabase_client import refund_credits
+        await refund_credits(user["id"], credit_cost)
         raise HTTPException(status_code=400, detail="File must be a PDF")
 
     if file.size and file.size > 50 * 1024 * 1024:  # 50MB limit
+        # Refund credits on validation failure
+        from services.supabase_client import refund_credits
+        await refund_credits(user["id"], credit_cost)
         raise HTTPException(status_code=400, detail="File size must be less than 50MB")
 
     # Read file content
@@ -65,6 +77,9 @@ async def upload_pdf(
             content_type="application/pdf"
         )
     except Exception as e:
+        # Refund credits on upload failure
+        from services.supabase_client import refund_credits
+        await refund_credits(user["id"], credit_cost)
         raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
 
     # Determine initial status based on upload type
@@ -72,10 +87,10 @@ async def upload_pdf(
     # - book: Wait for chapter selection
     if upload_type == "book":
         initial_status = "pending_selection"
-        message = "Book uploaded. Please select chapters to process."
+        message = f"Book uploaded ({credit_cost} credits used). Please select chapters to process."
     else:
         initial_status = "queued"
-        message = "Notes uploaded. Added to processing queue."
+        message = f"Notes uploaded ({credit_cost} credit used). Added to processing queue."
 
     # Create book record
     book = await create_book(
@@ -99,22 +114,11 @@ async def upload_pdf(
 
 @router.get("/usage")
 async def get_usage(user: dict = Depends(get_current_user)):
-    """Get user's usage and limits for the current month."""
-    tier = await get_user_tier(user["id"])
-    limits = get_tier_limits(tier)
+    """Get user's credit info."""
     usage = await get_user_usage(user["id"])
 
     return {
-        "tier": tier,
-        "usage": usage,
-        "limits": limits,
-        "can_upload_books": limits["can_upload_books"],
-        "books_remaining": (
-            None if limits["books_limit"] is None
-            else max(0, limits["books_limit"] - usage["books_this_month"])
-        ),
-        "notes_remaining": (
-            None if limits["notes_limit"] is None
-            else max(0, limits["notes_limit"] - usage["notes_this_month"])
-        )
+        "credits": usage["credits"],
+        "book_cost": usage["book_cost"],
+        "notes_cost": usage["notes_cost"]
     }

@@ -155,8 +155,8 @@ export const api = {
   },
 
   // Billing
-  async createCheckoutSession(tier: 'basic' | 'pro', token: string) {
-    return fetchApi<{ checkout_url: string }>(`/api/billing/create-checkout-session?tier=${tier}`, {
+  async createCheckoutSession(plan: 'starter' | 'pro', token: string) {
+    return fetchApi<{ checkout_url: string }>(`/api/billing/create-checkout-session?plan=${plan}`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
     })
@@ -171,10 +171,9 @@ export const api = {
 
   async getSubscription(token: string) {
     return fetchApi<{
-      tier: string
-      status: string | null
-      current_period_end: number | null
-      cancel_at_period_end?: boolean
+      credits: number
+      book_cost: number
+      notes_cost: number
     }>('/api/billing/subscription', {
       headers: { Authorization: `Bearer ${token}` },
     })

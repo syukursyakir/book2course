@@ -7,6 +7,11 @@ load_dotenv()
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 
+# Credit costs
+CREDIT_COST_BOOK = 5
+CREDIT_COST_NOTES = 1
+DEFAULT_FREE_CREDITS = 5
+
 
 def get_supabase_client() -> Client:
     """Get Supabase client instance."""
@@ -269,127 +274,6 @@ async def delete_book(book_id: str, user_id: str) -> bool:
     return True
 
 
-async def get_user_tier(user_id: str) -> str:
-    """
-    Get the user's subscription tier.
-    Returns: 'free', 'basic', or 'pro'
-    """
-    try:
-        client = get_supabase_client()
-        result = client.table("profiles").select("tier, subscription_status").eq("user_id", user_id).execute()
-
-        if not result.data:
-            return "free"
-
-        profile = result.data[0]
-        tier = profile.get("tier", "free")
-        status = profile.get("subscription_status")
-
-        # Only return paid tier if subscription is active
-        if tier in ("basic", "pro") and status == "active":
-            return tier
-
-        return "free"
-    except Exception as e:
-        print(f"[TIER] Error getting user tier: {e}")
-        return "free"
-
-
-async def get_user_usage(user_id: str) -> dict:
-    """
-    Get user's upload usage for the current month.
-    Returns counts of books and notes uploaded this month.
-    """
-    from datetime import datetime
-
-    client = get_supabase_client()
-
-    # Get first day of current month
-    now = datetime.now()
-    month_start = datetime(now.year, now.month, 1).isoformat()
-
-    # Count books uploaded this month
-    books_result = client.table("books").select("id", count="exact").eq(
-        "user_id", user_id
-    ).eq("upload_type", "book").gte("created_at", month_start).execute()
-
-    # Count notes uploaded this month
-    notes_result = client.table("books").select("id", count="exact").eq(
-        "user_id", user_id
-    ).eq("upload_type", "notes").gte("created_at", month_start).execute()
-
-    return {
-        "books_this_month": books_result.count or 0,
-        "notes_this_month": notes_result.count or 0
-    }
-
-
-def get_tier_limits(tier: str) -> dict:
-    """
-    Get upload limits for a tier.
-    Returns: {"books_limit": int or None, "notes_limit": int or None}
-    None means unlimited.
-    """
-    limits = {
-        "free": {"books_limit": 0, "notes_limit": 2, "can_upload_books": False},
-        "basic": {"books_limit": 10, "notes_limit": 20, "can_upload_books": True},
-        "pro": {"books_limit": None, "notes_limit": None, "can_upload_books": True}  # None = unlimited
-    }
-    return limits.get(tier, limits["free"])
-
-
-async def check_upload_allowed(user_id: str, upload_type: str) -> dict:
-    """
-    Check if user can upload based on their tier and usage.
-    Returns: {"allowed": bool, "reason": str or None, "usage": dict, "limits": dict}
-    """
-    tier = await get_user_tier(user_id)
-    limits = get_tier_limits(tier)
-    usage = await get_user_usage(user_id)
-
-    # Check if books are allowed for this tier
-    if upload_type == "book" and not limits["can_upload_books"]:
-        return {
-            "allowed": False,
-            "reason": "Book uploads require a Basic or Pro subscription",
-            "usage": usage,
-            "limits": limits,
-            "tier": tier
-        }
-
-    # Check monthly limits
-    if upload_type == "book":
-        limit = limits["books_limit"]
-        current = usage["books_this_month"]
-        if limit is not None and current >= limit:
-            return {
-                "allowed": False,
-                "reason": f"Monthly book limit reached ({current}/{limit}). Upgrade for more.",
-                "usage": usage,
-                "limits": limits,
-                "tier": tier
-            }
-    else:  # notes
-        limit = limits["notes_limit"]
-        current = usage["notes_this_month"]
-        if limit is not None and current >= limit:
-            return {
-                "allowed": False,
-                "reason": f"Monthly notes limit reached ({current}/{limit}). Upgrade for more.",
-                "usage": usage,
-                "limits": limits,
-                "tier": tier
-            }
-
-    return {
-        "allowed": True,
-        "reason": None,
-        "usage": usage,
-        "limits": limits,
-        "tier": tier
-    }
-
-
 async def delete_course(course_id: str, user_id: str) -> bool:
     """Delete a course and its associated chapters/lessons."""
     client = get_supabase_client()
@@ -410,3 +294,138 @@ async def delete_course(course_id: str, user_id: str) -> bool:
         client.table("books").delete().eq("id", book_id).execute()
 
     return True
+
+
+# ==================== CREDIT SYSTEM ====================
+
+async def get_user_credits(user_id: str) -> int:
+    """Get user's current credit balance."""
+    try:
+        client = get_supabase_client()
+        result = client.table("profiles").select("credits").eq("user_id", user_id).execute()
+
+        if not result.data:
+            # Create profile with default credits for new user
+            await ensure_user_profile(user_id)
+            return DEFAULT_FREE_CREDITS
+
+        return result.data[0].get("credits", DEFAULT_FREE_CREDITS)
+    except Exception as e:
+        print(f"[CREDITS] Error getting credits: {e}")
+        return 0
+
+
+async def ensure_user_profile(user_id: str) -> None:
+    """Ensure user has a profile with default credits."""
+    try:
+        client = get_supabase_client()
+        client.table("profiles").upsert({
+            "user_id": user_id,
+            "credits": DEFAULT_FREE_CREDITS,
+            "tier": "free"
+        }, on_conflict="user_id").execute()
+    except Exception as e:
+        print(f"[CREDITS] Error ensuring profile: {e}")
+
+
+async def deduct_credits(user_id: str, amount: int) -> bool:
+    """
+    Deduct credits from user's balance.
+    Returns True if successful, False if insufficient credits.
+    """
+    try:
+        client = get_supabase_client()
+
+        # Get current credits
+        current = await get_user_credits(user_id)
+        if current < amount:
+            return False
+
+        # Deduct credits
+        new_balance = current - amount
+        client.table("profiles").update({
+            "credits": new_balance
+        }).eq("user_id", user_id).execute()
+
+        print(f"[CREDITS] Deducted {amount} credits from user {user_id}. New balance: {new_balance}")
+        return True
+    except Exception as e:
+        print(f"[CREDITS] Error deducting credits: {e}")
+        return False
+
+
+async def add_credits(user_id: str, amount: int) -> int:
+    """
+    Add credits to user's balance.
+    Returns new balance.
+    """
+    try:
+        client = get_supabase_client()
+
+        # Ensure profile exists
+        await ensure_user_profile(user_id)
+
+        # Get current credits
+        current = await get_user_credits(user_id)
+        new_balance = current + amount
+
+        # Update credits
+        client.table("profiles").update({
+            "credits": new_balance
+        }).eq("user_id", user_id).execute()
+
+        print(f"[CREDITS] Added {amount} credits to user {user_id}. New balance: {new_balance}")
+        return new_balance
+    except Exception as e:
+        print(f"[CREDITS] Error adding credits: {e}")
+        return 0
+
+
+async def refund_credits(user_id: str, amount: int) -> int:
+    """Refund credits to user (alias for add_credits)."""
+    return await add_credits(user_id, amount)
+
+
+def get_credit_cost(upload_type: str) -> int:
+    """Get credit cost for an upload type."""
+    if upload_type == "book":
+        return CREDIT_COST_BOOK
+    return CREDIT_COST_NOTES
+
+
+async def check_upload_allowed(user_id: str, upload_type: str) -> dict:
+    """
+    Check if user has enough credits for upload.
+    Returns: {"allowed": bool, "reason": str or None, "credits": int, "cost": int}
+    """
+    credits = await get_user_credits(user_id)
+    cost = get_credit_cost(upload_type)
+
+    if credits < cost:
+        return {
+            "allowed": False,
+            "reason": f"Not enough credits. You need {cost} credits for this upload, but you have {credits}.",
+            "credits": credits,
+            "cost": cost
+        }
+
+    return {
+        "allowed": True,
+        "reason": None,
+        "credits": credits,
+        "cost": cost
+    }
+
+
+async def get_user_usage(user_id: str) -> dict:
+    """
+    Get user's credit info.
+    Returns credits balance and cost info.
+    """
+    credits = await get_user_credits(user_id)
+
+    return {
+        "credits": credits,
+        "book_cost": CREDIT_COST_BOOK,
+        "notes_cost": CREDIT_COST_NOTES
+    }

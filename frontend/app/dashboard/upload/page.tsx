@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { PDFUploader } from '@/components/upload'
-import { ArrowLeft, BookOpen, FileText, Check, Lock, Loader2, Crown } from 'lucide-react'
+import { ArrowLeft, BookOpen, FileText, Check, Lock, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { createClient } from '@/lib/supabase'
@@ -11,18 +11,9 @@ import { createClient } from '@/lib/supabase'
 type UploadType = 'book' | 'notes' | null
 
 interface UsageData {
-  tier: string
-  can_upload_books: boolean
-  books_remaining: number | null
-  notes_remaining: number | null
-  usage: {
-    books_this_month: number
-    notes_this_month: number
-  }
-  limits: {
-    books_limit: number | null
-    notes_limit: number | null
-  }
+  credits: number
+  book_cost: number
+  notes_cost: number
 }
 
 export default function UploadPage() {
@@ -66,12 +57,11 @@ export default function UploadPage() {
     }, 1500)
   }
 
-  const canUploadBooks = usageData?.can_upload_books ?? false
-  const booksRemaining = usageData?.books_remaining ?? null
-  const notesRemaining = usageData?.notes_remaining ?? null
-  const tier = usageData?.tier ?? 'free'
-  const canUploadNotes = notesRemaining === null || (notesRemaining !== undefined && notesRemaining > 0)
-  const canUploadMoreBooks = booksRemaining === null || (booksRemaining !== undefined && booksRemaining > 0)
+  const credits = usageData?.credits ?? 0
+  const bookCost = usageData?.book_cost ?? 5
+  const notesCost = usageData?.notes_cost ?? 1
+  const canUploadBooks = credits >= bookCost
+  const canUploadNotes = credits >= notesCost
 
   if (isLoading) {
     return (
@@ -86,47 +76,53 @@ export default function UploadPage() {
       {/* Step 1: Choose Upload Type */}
       {!uploadType && (
         <>
-          <div className="mb-10">
+          <div className="mb-6">
             <h1 className="text-2xl font-bold text-dark-100 mb-2">Upload PDF</h1>
             <p className="text-dark-400">Choose the type of document to help us process it better.</p>
+          </div>
+
+          {/* Credits Display */}
+          <div className="mb-8 p-4 bg-dark-900 border border-dark-800 rounded-xl">
+            <div className="flex items-center justify-between">
+              <span className="text-dark-400">Your Credits</span>
+              <span className={cn(
+                'text-2xl font-bold',
+                credits > 10 ? 'text-green-500' : credits > 0 ? 'text-yellow-500' : 'text-red-400'
+              )}>
+                {credits}
+              </span>
+            </div>
           </div>
 
           <div className="grid sm:grid-cols-2 gap-6">
             {/* Book Option */}
             <button
-              onClick={() => canUploadBooks && canUploadMoreBooks && setUploadType('book')}
-              disabled={!canUploadBooks || !canUploadMoreBooks}
+              onClick={() => canUploadBooks && setUploadType('book')}
+              disabled={!canUploadBooks}
               className={cn(
                 'group p-8 rounded-xl border-2 text-left transition-all relative',
-                canUploadBooks && canUploadMoreBooks
+                canUploadBooks
                   ? 'border-dark-700 hover:border-primary-500 bg-dark-900 hover:bg-dark-800 cursor-pointer'
                   : 'border-dark-800 bg-dark-900/50 cursor-not-allowed opacity-60'
               )}
             >
-              {!canUploadBooks && (
-                <div className="absolute top-4 right-4">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-yellow-500/20 text-yellow-500 text-xs font-medium">
-                    <Crown className="w-3 h-3" />
-                    Pro
-                  </div>
+              <div className="absolute top-4 right-4">
+                <div className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium',
+                  canUploadBooks ? 'bg-primary-500/20 text-primary-500' : 'bg-red-500/20 text-red-400'
+                )}>
+                  {bookCost} credits
                 </div>
-              )}
-              {canUploadBooks && !canUploadMoreBooks && (
-                <div className="absolute top-4 right-4">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/20 text-red-400 text-xs font-medium">
-                    Limit reached
-                  </div>
-                </div>
-              )}
+              </div>
 
               <div className={cn(
                 'w-14 h-14 rounded-xl flex items-center justify-center mb-4 transition-colors',
-                canUploadBooks && canUploadMoreBooks
+                canUploadBooks
                   ? 'bg-primary-500/20 group-hover:bg-primary-500/30'
                   : 'bg-dark-800'
               )}>
                 {canUploadBooks ? (
-                  <BookOpen className={cn('w-7 h-7', canUploadMoreBooks ? 'text-primary-500' : 'text-dark-500')} />
+                  <BookOpen className="w-7 h-7 text-primary-500" />
                 ) : (
                   <Lock className="w-7 h-7 text-dark-500" />
                 )}
@@ -135,14 +131,9 @@ export default function UploadPage() {
               <p className="text-dark-400 text-sm mb-3">
                 Textbooks, manuals, long guides, or any document with chapters
               </p>
-              {canUploadBooks && booksRemaining !== null && (
-                <p className="text-xs text-dark-500">
-                  {booksRemaining} of {usageData?.limits.books_limit} remaining this month
-                </p>
-              )}
               {!canUploadBooks && (
-                <p className="text-xs text-yellow-500/80">
-                  Upgrade to Basic or Pro to upload books
+                <p className="text-xs text-red-400">
+                  Need {bookCost} credits (you have {credits})
                 </p>
               )}
             </button>
@@ -158,13 +149,14 @@ export default function UploadPage() {
                   : 'border-dark-800 bg-dark-900/50 cursor-not-allowed opacity-60'
               )}
             >
-              {!canUploadNotes && (
-                <div className="absolute top-4 right-4">
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-red-500/20 text-red-400 text-xs font-medium">
-                    Limit reached
-                  </div>
+              <div className="absolute top-4 right-4">
+                <div className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium',
+                  canUploadNotes ? 'bg-blue-500/20 text-blue-500' : 'bg-red-500/20 text-red-400'
+                )}>
+                  {notesCost} credit
                 </div>
-              )}
+              </div>
 
               <div className={cn(
                 'w-14 h-14 rounded-xl flex items-center justify-center mb-4 transition-colors',
@@ -176,20 +168,20 @@ export default function UploadPage() {
               <p className="text-dark-400 text-sm mb-3">
                 Lecture notes, slides, short docs, articles, or quick references
               </p>
-              {notesRemaining !== null && (
-                <p className="text-xs text-dark-500">
-                  {notesRemaining} of {usageData?.limits.notes_limit} remaining this month
+              {!canUploadNotes && (
+                <p className="text-xs text-red-400">
+                  Need {notesCost} credit (you have {credits})
                 </p>
               )}
             </button>
           </div>
 
-          {tier === 'free' && (
+          {credits < bookCost && (
             <div className="mt-8 text-center">
               <p className="text-dark-500 text-sm">
-                Want more uploads and book processing?{' '}
+                Need more credits?{' '}
                 <Link href="/pricing" className="text-primary-500 hover:underline">
-                  Upgrade your plan
+                  Buy credits
                 </Link>
               </p>
             </div>
