@@ -273,15 +273,26 @@ async def get_user_tier(user_id: str) -> str:
     """
     Get the user's subscription tier.
     Returns: 'free', 'basic', or 'pro'
-
-    For now, always returns 'free'. When you add Stripe,
-    check the user's subscription status here.
     """
-    # TODO: When adding Stripe, check subscription status
-    # client = get_supabase_client()
-    # result = client.table("profiles").select("tier").eq("user_id", user_id).execute()
-    # return result.data[0]["tier"] if result.data else "free"
-    return "free"
+    try:
+        client = get_supabase_client()
+        result = client.table("profiles").select("tier, subscription_status").eq("user_id", user_id).execute()
+
+        if not result.data:
+            return "free"
+
+        profile = result.data[0]
+        tier = profile.get("tier", "free")
+        status = profile.get("subscription_status")
+
+        # Only return paid tier if subscription is active
+        if tier in ("basic", "pro") and status == "active":
+            return tier
+
+        return "free"
+    except Exception as e:
+        print(f"[TIER] Error getting user tier: {e}")
+        return "free"
 
 
 async def get_user_usage(user_id: str) -> dict:

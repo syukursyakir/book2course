@@ -153,4 +153,30 @@ export const api = {
       headers: { Authorization: `Bearer ${token}` },
     })
   },
+
+  // Billing
+  async createCheckoutSession(tier: 'basic' | 'pro', token: string) {
+    return fetchApi<{ checkout_url: string }>(`/api/billing/create-checkout-session?tier=${tier}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+
+  async createPortalSession(token: string) {
+    return fetchApi<{ portal_url: string }>('/api/billing/create-portal-session', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
+
+  async getSubscription(token: string) {
+    return fetchApi<{
+      tier: string
+      status: string | null
+      current_period_end: number | null
+      cancel_at_period_end?: boolean
+    }>('/api/billing/subscription', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
 }

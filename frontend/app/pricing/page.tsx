@@ -1,10 +1,14 @@
 'use client'
 
+import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Navbar } from '@/components/layout'
 import { Button } from '@/components/ui'
-import { Check, X, Crown, Zap, Sparkles } from 'lucide-react'
+import { Check, X, Crown, Zap, Sparkles, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
+import { createClient } from '@/lib/supabase'
+import { api } from '@/lib/api'
 
 interface PlanFeature {
   text: string
@@ -13,6 +17,7 @@ interface PlanFeature {
 
 interface Plan {
   name: string
+  tier: 'free' | 'basic' | 'pro'
   price: string
   period: string
   description: string
@@ -25,6 +30,7 @@ interface Plan {
 const plans: Plan[] = [
   {
     name: 'Free',
+    tier: 'free',
     price: '$0',
     period: 'forever',
     description: 'Perfect for trying out Book2Course',
@@ -43,6 +49,7 @@ const plans: Plan[] = [
   },
   {
     name: 'Basic',
+    tier: 'basic',
     price: '$9',
     period: '/month',
     description: 'For students and self-learners',
@@ -62,6 +69,7 @@ const plans: Plan[] = [
   },
   {
     name: 'Pro',
+    tier: 'pro',
     price: '$24',
     period: '/month',
     description: 'For power users and professionals',
@@ -81,6 +89,51 @@ const plans: Plan[] = [
 ]
 
 export default function PricingPage() {
+  const router = useRouter()
+  const [loadingTier, setLoadingTier] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const handlePlanClick = async (plan: Plan) => {
+    setError(null)
+
+    // Free plan - just go to signup
+    if (plan.tier === 'free') {
+      router.push('/signup')
+      return
+    }
+
+    // Paid plans - need to check auth and create checkout session
+    setLoadingTier(plan.tier)
+
+    try {
+      const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+
+      if (!session) {
+        // Not logged in - redirect to signup with redirect back
+        router.push(`/signup?redirect=/pricing&plan=${plan.tier}`)
+        return
+      }
+
+      // Create checkout session
+      const result = await api.createCheckoutSession(plan.tier, session.access_token)
+
+      if (result.error) {
+        setError(result.error)
+        setLoadingTier(null)
+        return
+      }
+
+      if (result.data?.checkout_url) {
+        // Redirect to Stripe Checkout
+        window.location.href = result.data.checkout_url
+      }
+    } catch (err) {
+      setError('Something went wrong. Please try again.')
+      setLoadingTier(null)
+    }
+  }
+
   return (
     <div className="min-h-screen bg-dark-950">
       <Navbar />
@@ -96,6 +149,13 @@ export default function PricingPage() {
               Choose the plan that fits your learning needs. Upgrade or downgrade anytime.
             </p>
           </div>
+
+          {/* Error Message */}
+          {error && (
+            <div className="max-w-md mx-auto mb-8 bg-red-500/10 border border-red-500/20 text-red-500 px-4 py-3 rounded-lg text-center">
+              {error}
+            </div>
+          )}
 
           {/* Pricing Cards */}
           <div className="grid md:grid-cols-3 gap-8">
@@ -138,14 +198,21 @@ export default function PricingPage() {
                 </div>
 
                 {/* CTA Button */}
-                <Link href={plan.name === 'Free' ? '/signup' : '/signup'}>
-                  <Button
-                    className="w-full mb-8"
-                    variant={plan.popular ? 'primary' : 'secondary'}
-                  >
-                    {plan.cta}
-                  </Button>
-                </Link>
+                <Button
+                  className="w-full mb-8"
+                  variant={plan.popular ? 'primary' : 'secondary'}
+                  onClick={() => handlePlanClick(plan)}
+                  disabled={loadingTier !== null}
+                >
+                  {loadingTier === plan.tier ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    plan.cta
+                  )}
+                </Button>
 
                 {/* Features */}
                 <ul className="space-y-4">
