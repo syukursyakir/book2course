@@ -44,34 +44,34 @@ const plans: Plan[] = [
     name: 'Starter',
     id: 'starter',
     price: '$9.90',
-    period: '',
+    period: '/month',
     credits: 30,
     description: 'Perfect for students',
     icon: <Sparkles className="w-6 h-6" />,
     popular: true,
     highlights: [
-      '30 credits',
-      '30 notes OR 6 books',
+      '30 credits every month',
+      '30 notes OR 6 books/month',
       'Chapter selection for books',
-      'Credits never expire',
+      'Credits roll over',
     ],
-    cta: 'Buy Starter',
+    cta: 'Subscribe',
   },
   {
     name: 'Pro',
     id: 'pro',
     price: '$24.90',
-    period: '',
+    period: '/month',
     credits: 100,
     description: 'Best value for power users',
     icon: <Crown className="w-6 h-6" />,
     highlights: [
-      '100 credits',
-      '100 notes OR 20 books',
+      '100 credits every month',
+      '100 notes OR 20 books/month',
       'Priority processing',
       'Best price per credit',
     ],
-    cta: 'Buy Pro',
+    cta: 'Subscribe',
   },
 ]
 
@@ -187,8 +187,8 @@ export default function PricingPage() {
                 {/* Price */}
                 <div className="mb-6">
                   <span className="text-4xl font-bold text-dark-100">{plan.price}</span>
-                  {plan.id !== 'free' && (
-                    <span className="text-dark-500 ml-2 text-sm">one-time</span>
+                  {plan.period && (
+                    <span className="text-dark-500">{plan.period}</span>
                   )}
                 </div>
 

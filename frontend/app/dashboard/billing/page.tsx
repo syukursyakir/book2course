@@ -136,9 +136,9 @@ export default function BillingPage() {
         </div>
       </div>
 
-      {/* Credit Packs */}
+      {/* Subscription Plans */}
       <div className="bg-dark-900 border border-dark-800 rounded-xl p-6">
-        <h2 className="text-lg font-semibold text-dark-100 mb-4">Credit Packs</h2>
+        <h2 className="text-lg font-semibold text-dark-100 mb-4">Monthly Plans</h2>
 
         <div className="space-y-3">
           <Link
@@ -146,11 +146,11 @@ export default function BillingPage() {
             className="flex items-center justify-between p-4 bg-dark-800/50 hover:bg-dark-800 rounded-xl transition-colors"
           >
             <div>
-              <p className="font-medium text-dark-200">Starter Pack</p>
-              <p className="text-sm text-dark-400">30 credits</p>
+              <p className="font-medium text-dark-200">Starter</p>
+              <p className="text-sm text-dark-400">30 credits/month</p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-lg font-bold text-dark-100">$9.90</span>
+              <span className="text-lg font-bold text-dark-100">$9.90<span className="text-sm text-dark-500">/mo</span></span>
               <ChevronRight className="w-4 h-4 text-dark-500" />
             </div>
           </Link>
@@ -161,20 +161,20 @@ export default function BillingPage() {
           >
             <div>
               <div className="flex items-center gap-2">
-                <p className="font-medium text-dark-200">Pro Pack</p>
+                <p className="font-medium text-dark-200">Pro</p>
                 <span className="px-2 py-0.5 bg-primary-500/20 text-primary-500 text-xs font-medium rounded-full">Best Value</span>
               </div>
-              <p className="text-sm text-dark-400">100 credits</p>
+              <p className="text-sm text-dark-400">100 credits/month</p>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-lg font-bold text-dark-100">$24.90</span>
+              <span className="text-lg font-bold text-dark-100">$24.90<span className="text-sm text-dark-500">/mo</span></span>
               <ChevronRight className="w-4 h-4 text-dark-500" />
             </div>
           </Link>
         </div>
 
         <p className="text-sm text-dark-500 mt-4 text-center">
-          Credits never expire and can be used anytime
+          Unused credits roll over to the next month
         </p>
       </div>
     </div>
