@@ -7,7 +7,6 @@ from services.supabase_client import (
     create_course,
     create_chapter,
     create_lesson,
-    get_user_tier
 )
 from services.pdf_processor import extract_text_from_pdf
 from services.ai_generator import process_book_to_course
@@ -127,9 +126,9 @@ class BookQueueWorker:
             if not text or len(text) < 100:
                 raise Exception("Not enough text extracted from PDF")
 
-            # Get user tier for tier-based features
-            user_tier = await get_user_tier(user_id)
-            print(f"[QUEUE] User tier: {user_tier}")
+            # All users who upload have paid credits, so they get full features
+            user_tier = "pro"
+            print(f"[QUEUE] User tier: {user_tier} (credit-based)")
 
             # Process with AI
             await on_progress("Starting AI processing...")
