@@ -156,13 +156,37 @@ export default function SettingsPage() {
   const handleDeleteAccount = async () => {
     setIsDeleting(true)
     try {
-      // Note: Full account deletion requires backend support
-      // For now, just sign out and show message
       const supabase = createClient()
+      const { data: { session } } = await supabase.auth.getSession()
+
+      if (!session) {
+        router.push('/auth')
+        return
+      }
+
+      // Call backend to delete all user data
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL
+      if (!apiUrl) {
+        throw new Error('API URL not configured')
+      }
+
+      const response = await fetch(`${apiUrl}/api/auth/account`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.detail || 'Failed to delete account')
+      }
+
+      // Sign out after successful deletion
       await supabase.auth.signOut()
       router.push('/?deleted=true')
     } catch (err) {
-      console.error('Error:', err)
+      console.error('Error deleting account:', err)
       setIsDeleting(false)
     }
   }

@@ -410,3 +410,63 @@ async def delete_course(course_id: str, user_id: str) -> bool:
         client.table("books").delete().eq("id", book_id).execute()
 
     return True
+
+
+async def delete_user_account(user_id: str) -> bool:
+    """
+    Delete all user data from the database.
+    This includes: progress, lessons (via cascade), chapters (via cascade),
+    courses, books, profiles, and files from storage.
+
+    Note: The actual auth user deletion must be done separately via Supabase Admin API.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    client = get_supabase_client()
+
+    try:
+        # 1. Delete all progress records
+        client.table("progress").delete().eq("user_id", user_id).execute()
+        logger.info(f"Deleted progress for user {user_id}")
+
+        # 2. Get all books to delete files from storage
+        books = client.table("books").select("id, file_url").eq("user_id", user_id).execute()
+
+        # 3. Delete files from storage
+        for book in books.data or []:
+            try:
+                file_url = book.get("file_url", "")
+                # Extract path from URL (format: .../books/user_id/file_id.pdf)
+                if "/books/" in file_url:
+                    path = file_url.split("/books/")[-1]
+                    client.storage.from_("books").remove([path])
+            except Exception as e:
+                logger.warning(f"Could not delete file for book {book['id']}: {e}")
+
+        # 4. Delete books (cascades to courses -> chapters -> lessons)
+        client.table("books").delete().eq("user_id", user_id).execute()
+        logger.info(f"Deleted books for user {user_id}")
+
+        # 5. Delete any orphaned courses (shouldn't exist but just in case)
+        client.table("courses").delete().eq("user_id", user_id).execute()
+
+        # 6. Delete profile
+        client.table("profiles").delete().eq("user_id", user_id).execute()
+        logger.info(f"Deleted profile for user {user_id}")
+
+        # 7. Delete avatar from storage if exists
+        try:
+            avatars = client.storage.from_("avatars").list(user_id)
+            if avatars:
+                paths = [f"{user_id}/{f['name']}" for f in avatars]
+                client.storage.from_("avatars").remove(paths)
+        except Exception as e:
+            logger.warning(f"Could not delete avatars for user {user_id}: {e}")
+
+        logger.info(f"Successfully deleted all data for user {user_id}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error deleting user account {user_id}: {e}")
+        raise

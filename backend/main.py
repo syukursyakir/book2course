@@ -1,19 +1,75 @@
 import os
+import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from routers import auth, upload, courses, lessons, books, billing
 from services.queue_worker import queue_worker
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Rate limiter
+limiter = Limiter(key_func=get_remote_address)
+
+
+def validate_environment():
+    """Validate required environment variables on startup."""
+    required_vars = [
+        "SUPABASE_URL",
+        "SUPABASE_SERVICE_KEY",
+    ]
+
+    # These are required in production
+    production_required = [
+        "OPENROUTER_API_KEY",
+        "STRIPE_SECRET_KEY",
+        "STRIPE_WEBHOOK_SECRET",
+        "CORS_ORIGINS",
+    ]
+
+    missing = []
+    for var in required_vars:
+        if not os.getenv(var):
+            missing.append(var)
+
+    # Check if we're in production (no localhost in CORS_ORIGINS or FRONTEND_URL)
+    cors_origins = os.getenv("CORS_ORIGINS", "")
+    frontend_url = os.getenv("FRONTEND_URL", "")
+    is_production = (
+        cors_origins and "localhost" not in cors_origins and
+        frontend_url and "localhost" not in frontend_url
+    )
+
+    if is_production:
+        for var in production_required:
+            if not os.getenv(var):
+                missing.append(var)
+
+    if missing:
+        raise RuntimeError(
+            f"Missing required environment variables: {', '.join(missing)}. "
+            "Please set these in your environment or .env file."
+        )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Start the queue worker
-    print("[APP] Starting queue worker...")
+    # Startup: Validate environment and start queue worker
+    validate_environment()
+    logger.info("Starting queue worker...")
     queue_worker.start()
     yield
-    # Shutdown: Nothing special needed
-    print("[APP] Shutting down...")
+    # Shutdown
+    logger.info("Shutting down...")
 
 
 app = FastAPI(
@@ -23,13 +79,26 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS configuration
-# In production, set CORS_ORIGINS env var to your frontend domain
-cors_origins = os.getenv("CORS_ORIGINS", "*")
-if cors_origins == "*":
-    origins = ["*"]
+# Add rate limiter to app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS configuration - MUST be explicitly set in production
+cors_origins = os.getenv("CORS_ORIGINS")
+if not cors_origins:
+    # Allow localhost only in development
+    logger.warning("CORS_ORIGINS not set - defaulting to localhost only (development mode)")
+    origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
 else:
     origins = [origin.strip() for origin in cors_origins.split(",")]
+    # Validate that we're not allowing everything in production
+    if "*" in origins:
+        raise RuntimeError(
+            "CORS_ORIGINS cannot be '*' in production. "
+            "Please specify explicit origins like 'https://yourdomain.com'"
+        )
+
+logger.info(f"CORS allowed origins: {origins}")
 
 app.add_middleware(
     CORSMiddleware,

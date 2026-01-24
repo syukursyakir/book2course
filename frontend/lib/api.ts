@@ -1,4 +1,19 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+// API configuration - requires NEXT_PUBLIC_API_URL to be set
+const getApiBaseUrl = (): string => {
+  const url = process.env.NEXT_PUBLIC_API_URL
+  if (!url) {
+    // In development, fall back to localhost
+    if (process.env.NODE_ENV === 'development') {
+      return 'http://localhost:8000'
+    }
+    // In production, this should never happen
+    console.error('NEXT_PUBLIC_API_URL environment variable is not configured')
+    throw new Error('API URL not configured. Please set NEXT_PUBLIC_API_URL.')
+  }
+  return url
+}
+
+const API_BASE_URL = getApiBaseUrl()
 
 interface ApiResponse<T> {
   data?: T
@@ -20,7 +35,7 @@ async function fetchApi<T>(
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: 'Request failed' }))
-      return { error: error.message || `HTTP ${response.status}` }
+      return { error: error.message || error.detail || `HTTP ${response.status}` }
     }
 
     const data = await response.json()
@@ -91,7 +106,7 @@ export const api = {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: 'Upload failed' }))
-      return { error: error.message }
+      return { error: error.message || error.detail }
     }
 
     return { data: await response.json() }
@@ -179,4 +194,15 @@ export const api = {
       headers: { Authorization: `Bearer ${token}` },
     })
   },
+
+  // Account
+  async deleteAccount(token: string) {
+    return fetchApi<{ success: boolean; message: string }>('/api/auth/account', {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+  },
 }
+
+// Export base URL for components that need it directly
+export { API_BASE_URL }

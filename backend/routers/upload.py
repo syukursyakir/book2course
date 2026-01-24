@@ -1,6 +1,9 @@
 import uuid
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
+import logging
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Request
 from typing import Optional
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from routers.auth import get_current_user
 from services.supabase_client import (
     upload_file_to_storage,
@@ -14,11 +17,18 @@ from services.pdf_processor import get_pdf_metadata
 from services.queue_worker import queue_worker
 from models.schemas import UploadResponse
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api", tags=["upload"])
+
+# Rate limiter for upload endpoint
+limiter = Limiter(key_func=get_remote_address)
 
 
 @router.post("/upload", response_model=UploadResponse)
+@limiter.limit("10/minute")  # Max 10 uploads per minute per IP
 async def upload_pdf(
+    request: Request,
     file: UploadFile = File(...),
     upload_type: str = Form(default="notes"),
     user: dict = Depends(get_current_user)
@@ -38,15 +48,20 @@ async def upload_pdf(
     if not upload_check["allowed"]:
         raise HTTPException(status_code=403, detail=upload_check["reason"])
 
-    # Validate file
+    # Validate file extension
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="File must be a PDF")
 
-    if file.size and file.size > 50 * 1024 * 1024:  # 50MB limit
+    # Validate file size (50MB limit)
+    if file.size and file.size > 50 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File size must be less than 50MB")
 
     # Read file content
     pdf_bytes = await file.read()
+
+    # Validate content type by checking PDF magic bytes
+    if not pdf_bytes.startswith(b'%PDF'):
+        raise HTTPException(status_code=400, detail="Invalid PDF file")
 
     # Get metadata
     metadata = get_pdf_metadata(pdf_bytes)
@@ -65,7 +80,8 @@ async def upload_pdf(
             content_type="application/pdf"
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
+        logger.error(f"Failed to upload file: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload file")
 
     # Determine initial status based on upload type
     # - notes: Queue immediately for processing
@@ -90,6 +106,8 @@ async def upload_pdf(
     if upload_type == "notes":
         if not queue_worker.is_processing:
             queue_worker.start()
+
+    logger.info(f"User {user['id']} uploaded {upload_type}: {book['id']}")
 
     return UploadResponse(
         book_id=book["id"],

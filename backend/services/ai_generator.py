@@ -23,13 +23,12 @@ async def call_openrouter(
     for attempt in range(retries):
         try:
             async with httpx.AsyncClient() as client:
-                print(f"[AI] Making API call (attempt {attempt + 1}/{retries})...")
                 response = await client.post(
                     f"{OPENROUTER_BASE_URL}/chat/completions",
                     headers={
                         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
                         "Content-Type": "application/json",
-                        "HTTP-Referer": "http://localhost:3000",
+                        "HTTP-Referer": os.getenv("FRONTEND_URL", "http://localhost:3000"),
                         "X-Title": "Book2Course",
                     },
                     json={

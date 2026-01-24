@@ -1,9 +1,12 @@
 import os
+import logging
 import stripe
 from fastapi import APIRouter, HTTPException, Depends, Request, Header
 from typing import Optional
 from routers.auth import get_current_user
 from services.supabase_client import get_supabase_client
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
 
@@ -17,7 +20,7 @@ PRICE_IDS = {
 }
 
 # Frontend URL for redirects
-FRONTEND_URL = os.getenv("FRONTEND_URL", "https://www.book2course.org")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
 
 async def get_or_create_stripe_customer(user_id: str, email: str) -> str:
@@ -158,10 +161,16 @@ async def stripe_webhook(
     """Handle Stripe webhooks for subscription events."""
     webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
 
+    # Webhook secret is REQUIRED - reject if not configured
     if not webhook_secret:
-        # If no webhook secret, just acknowledge (for testing)
-        print("[STRIPE] Warning: No webhook secret configured")
-        return {"status": "received"}
+        logger.error("STRIPE_WEBHOOK_SECRET not configured")
+        raise HTTPException(
+            status_code=500,
+            detail="Webhook secret not configured"
+        )
+
+    if not stripe_signature:
+        raise HTTPException(status_code=400, detail="Missing stripe-signature header")
 
     payload = await request.body()
 
@@ -204,7 +213,7 @@ async def handle_checkout_completed(session: dict):
     customer_id = session.get("customer")
 
     if not user_id:
-        print(f"[STRIPE] Warning: No user_id in checkout session metadata")
+        logger.warning("No user_id in checkout session metadata")
         return
 
     # Update user profile with subscription info
@@ -216,7 +225,7 @@ async def handle_checkout_completed(session: dict):
         "subscription_status": "active"
     }, on_conflict="user_id").execute()
 
-    print(f"[STRIPE] User {user_id} subscribed to {tier} plan")
+    logger.info(f"User {user_id} subscribed to {tier} plan")
 
 
 async def handle_subscription_updated(subscription: dict):
@@ -232,7 +241,7 @@ async def handle_subscription_updated(subscription: dict):
     ).execute()
 
     if not result.data:
-        print(f"[STRIPE] Warning: No user found for subscription {subscription_id}")
+        logger.warning(f"No user found for subscription {subscription_id}")
         return
 
     user_id = result.data[0]["user_id"]
@@ -252,7 +261,7 @@ async def handle_subscription_updated(subscription: dict):
     }
 
     client.table("profiles").update(update_data).eq("user_id", user_id).execute()
-    print(f"[STRIPE] Updated user {user_id} subscription: status={status}, tier={tier}")
+    logger.info(f"Updated user {user_id} subscription: status={status}, tier={tier}")
 
 
 async def handle_subscription_deleted(subscription: dict):
@@ -278,7 +287,7 @@ async def handle_subscription_deleted(subscription: dict):
         "stripe_subscription_id": None
     }).eq("user_id", user_id).execute()
 
-    print(f"[STRIPE] User {user_id} subscription canceled, downgraded to free")
+    logger.info(f"User {user_id} subscription canceled, downgraded to free")
 
 
 async def handle_payment_failed(invoice: dict):
@@ -302,4 +311,4 @@ async def handle_payment_failed(invoice: dict):
         "subscription_status": "past_due"
     }).eq("user_id", user_id).execute()
 
-    print(f"[STRIPE] Payment failed for user {user_id}")
+    logger.info(f"Payment failed for user {user_id}")
