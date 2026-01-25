@@ -120,7 +120,7 @@ export default function ProgressPage() {
           </div>
           <div className="h-4 bg-dark-800 rounded-full overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-primary-500 to-green-500 transition-all duration-500"
+              className="h-full bg-gradient-to-r from-primary-500 to-indigo-500 transition-all duration-500"
               style={{ width: `${overallProgress}%` }}
             />
           </div>

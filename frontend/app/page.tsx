@@ -47,7 +47,7 @@ export default function LandingPage() {
 
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-dark-50 mb-6 leading-tight">
             Transform Any Book into an{' '}
-            <span className="text-primary-500">Interactive Course</span>
+            <span className="text-gradient">Interactive Course</span>
           </h1>
 
           <p className="text-lg text-dark-400 mb-10 max-w-2xl mx-auto">
@@ -57,7 +57,7 @@ export default function LandingPage() {
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Link href={ctaHref}>
-              <Button size="lg" className="w-full sm:w-auto">
+              <Button variant="gradient" size="lg" className="w-full sm:w-auto">
                 {ctaText}
                 <ArrowRight className="w-5 h-5 ml-2" />
               </Button>
@@ -187,7 +187,7 @@ export default function LandingPage() {
             Join thousands of learners who are studying smarter with AI-powered courses.
           </p>
           <Link href={ctaHref}>
-            <Button size="lg">
+            <Button variant="gradient" size="lg">
               {isLoggedIn ? 'Go to Dashboard' : 'Start Learning Now'}
               <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
