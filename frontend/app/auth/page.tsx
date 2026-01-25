@@ -1,35 +1,82 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { BookOpen, Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 
 type AuthStep = 'initial' | 'code-sent' | 'verifying'
 
-export default function AuthPage() {
+function AuthContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [step, setStep] = useState<AuthStep>('initial')
   const [email, setEmail] = useState('')
   const [code, setCode] = useState(['', '', '', '', '', ''])
   const [isLoading, setIsLoading] = useState(false)
   const [isCheckingAuth, setIsCheckingAuth] = useState(true)
   const [error, setError] = useState('')
+  const [isGoogleVerify, setIsGoogleVerify] = useState(false)
 
-  // Check if already logged in
+  // Check for Google verification or if already fully authenticated
   useEffect(() => {
     const checkAuth = async () => {
+      const verifyGoogleEmail = searchParams.get('verify_google')
+      const authError = searchParams.get('error')
+
+      if (authError) {
+        setError('Authentication failed. Please try again.')
+        setIsCheckingAuth(false)
+        return
+      }
+
+      // If coming from Google OAuth, send OTP for verification
+      if (verifyGoogleEmail) {
+        setEmail(decodeURIComponent(verifyGoogleEmail))
+        setIsGoogleVerify(true)
+        setIsCheckingAuth(false)
+        // Auto-send OTP
+        await sendOtpToEmail(decodeURIComponent(verifyGoogleEmail))
+        return
+      }
+
+      // Otherwise check if user is already logged in (shouldn't happen in normal flow)
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
+
+      // Only redirect if no verify_google param (meaning full auth is complete)
+      if (session && !verifyGoogleEmail) {
         router.push('/dashboard')
       } else {
         setIsCheckingAuth(false)
       }
     }
     checkAuth()
-  }, [router])
+  }, [router, searchParams])
+
+  // Send OTP to email
+  const sendOtpToEmail = async (emailToSend: string) => {
+    setIsLoading(true)
+    setError('')
+
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.auth.signInWithOtp({
+        email: emailToSend,
+        options: {
+          shouldCreateUser: true,
+        },
+      })
+      if (error) throw error
+
+      setStep('code-sent')
+    } catch (err: any) {
+      setError(err.message || 'Failed to send verification code')
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   // Handle Google sign in
   const handleGoogleSignIn = async () => {
@@ -55,26 +102,7 @@ export default function AuthPage() {
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!email) return
-
-    setIsLoading(true)
-    setError('')
-
-    try {
-      const supabase = createClient()
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          shouldCreateUser: true,
-        },
-      })
-      if (error) throw error
-
-      setStep('code-sent')
-    } catch (err: any) {
-      setError(err.message || 'Failed to send verification code')
-    } finally {
-      setIsLoading(false)
-    }
+    await sendOtpToEmail(email)
   }
 
   // Handle code input
@@ -157,22 +185,7 @@ export default function AuthPage() {
   const handleResendCode = async () => {
     setCode(['', '', '', '', '', ''])
     setError('')
-    setIsLoading(true)
-
-    try {
-      const supabase = createClient()
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          shouldCreateUser: true,
-        },
-      })
-      if (error) throw error
-    } catch (err: any) {
-      setError(err.message || 'Failed to resend code')
-    } finally {
-      setIsLoading(false)
-    }
+    await sendOtpToEmail(email)
   }
 
   // Show loading while checking auth
@@ -197,7 +210,7 @@ export default function AuthPage() {
           </Link>
         </div>
 
-        {step === 'initial' && (
+        {step === 'initial' && !isGoogleVerify && (
           <>
             {/* Headline */}
             <h1 className="text-2xl font-semibold text-gray-900 text-center mb-8">
@@ -281,29 +294,34 @@ export default function AuthPage() {
           </>
         )}
 
-        {(step === 'code-sent' || step === 'verifying') && (
+        {(step === 'code-sent' || step === 'verifying' || isGoogleVerify) && (
           <>
-            {/* Back button */}
-            <button
-              onClick={() => {
-                setStep('initial')
-                setCode(['', '', '', '', '', ''])
-                setError('')
-              }}
-              className="mb-6 text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-              Back
-            </button>
+            {/* Back button - only show for email flow, not Google */}
+            {!isGoogleVerify && (
+              <button
+                onClick={() => {
+                  setStep('initial')
+                  setCode(['', '', '', '', '', ''])
+                  setError('')
+                }}
+                className="mb-6 text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+                Back
+              </button>
+            )}
 
             {/* Headline */}
             <h1 className="text-2xl font-semibold text-gray-900 text-center mb-2">
-              Check your email
+              {isGoogleVerify ? 'Verify your email' : 'Check your email'}
             </h1>
             <p className="text-gray-500 text-center mb-8">
-              We sent a code to <span className="font-medium text-gray-700">{email}</span>
+              {isGoogleVerify
+                ? <>We sent a verification code to <span className="font-medium text-gray-700">{email}</span></>
+                : <>We sent a code to <span className="font-medium text-gray-700">{email}</span></>
+              }
             </p>
 
             {/* Error */}
@@ -351,9 +369,40 @@ export default function AuthPage() {
                 Resend
               </button>
             </p>
+
+            {/* Cancel Google verify */}
+            {isGoogleVerify && (
+              <button
+                onClick={() => {
+                  setIsGoogleVerify(false)
+                  setStep('initial')
+                  setEmail('')
+                  setCode(['', '', '', '', '', ''])
+                  setError('')
+                  // Sign out from partial Google auth
+                  const supabase = createClient()
+                  supabase.auth.signOut()
+                }}
+                className="w-full mt-6 text-sm text-gray-500 hover:text-gray-700"
+              >
+                Use a different account
+              </button>
+            )}
           </>
         )}
       </div>
     </div>
+  )
+}
+
+export default function AuthPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-gray-400" />
+      </div>
+    }>
+      <AuthContent />
+    </Suspense>
   )
 }
