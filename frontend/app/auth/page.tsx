@@ -204,7 +204,7 @@ function AuthContent() {
         {/* Logo */}
         <div className="flex justify-center mb-8">
           <Link href="/" className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-[#29CC57] rounded-xl flex items-center justify-center">
+            <div className="w-10 h-10 bg-gradient-brand rounded-xl flex items-center justify-center">
               <BookOpen className="w-6 h-6 text-white" />
             </div>
             <span className="text-xl font-semibold text-gray-900">Book2Course</span>
@@ -276,7 +276,7 @@ function AuthContent() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#29CC57] focus:border-transparent text-gray-900 placeholder:text-gray-400"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900 placeholder:text-gray-400"
               />
               <button
                 type="submit"
@@ -354,7 +354,7 @@ function AuthContent() {
                   onChange={(e) => handleCodeChange(index, e.target.value)}
                   onKeyDown={(e) => handleKeyDown(index, e)}
                   disabled={step === 'verifying'}
-                  className="w-12 h-14 text-center text-xl font-semibold border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#29CC57] focus:border-transparent disabled:bg-gray-50 disabled:text-gray-400"
+                  className="w-12 h-14 text-center text-xl font-semibold border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent disabled:bg-gray-50 disabled:text-gray-400"
                   autoFocus={index === 0}
                 />
               ))}
@@ -374,7 +374,7 @@ function AuthContent() {
               <button
                 onClick={handleResendCode}
                 disabled={isLoadingEmail}
-                className="text-[#29CC57] hover:underline font-medium disabled:opacity-50"
+                className="text-primary-500 hover:underline font-medium disabled:opacity-50"
               >
                 Resend
               </button>
