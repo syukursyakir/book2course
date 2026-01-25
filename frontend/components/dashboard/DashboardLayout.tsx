@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Menu, Loader2 } from 'lucide-react'
 import { DashboardSidebar } from './DashboardSidebar'
 import { createClient } from '@/lib/supabase'
+import { Logo } from '@/components/ui'
 
 interface UsageData {
   credits: number
@@ -82,7 +83,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             >
               <Menu className="w-6 h-6" />
             </button>
-            <span className="text-dark-100 font-medium">Book2Course</span>
+            <Logo size="sm" />
             <div className="w-10" /> {/* Spacer for alignment */}
           </div>
         </header>

@@ -3,7 +3,6 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  BookOpen,
   Home,
   Upload,
   BarChart3,
@@ -15,6 +14,7 @@ import {
   Library
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { Logo } from '@/components/ui'
 
 interface NavItem {
   label: string
@@ -91,11 +91,8 @@ export function DashboardSidebar({ usageData, isOpen, onClose }: DashboardSideba
       )}>
         {/* Logo */}
         <div className="h-16 flex items-center justify-between px-5 border-b border-dark-800">
-          <Link href="/" className="flex items-center gap-2.5">
-            <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center">
-              <BookOpen className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-lg font-semibold text-dark-100">Book2Course</span>
+          <Link href="/">
+            <Logo size="sm" />
           </Link>
           {/* Mobile close button */}
           <button

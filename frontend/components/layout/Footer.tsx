@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { BookOpen } from 'lucide-react'
+import { Logo } from '@/components/ui'
 
 export function Footer() {
   return (
@@ -8,11 +8,8 @@ export function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* Brand */}
           <div className="col-span-1 md:col-span-2">
-            <Link href="/" className="flex items-center gap-2 mb-4">
-              <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center">
-                <BookOpen className="w-5 h-5 text-white" />
-              </div>
-              <span className="text-lg font-semibold text-dark-100">Book2Course</span>
+            <Link href="/" className="inline-block mb-4">
+              <Logo size="sm" />
             </Link>
             <p className="text-dark-400 text-sm max-w-md">
               Transform any PDF book into an interactive learning experience with AI-powered
@@ -56,7 +53,7 @@ export function Footer() {
 
         <div className="mt-12 pt-8 border-t border-dark-800">
           <p className="text-dark-500 text-sm text-center">
-            &copy; {new Date().getFullYear()} Book2Course. All rights reserved.
+            &copy; {new Date().getFullYear()} book2course. All rights reserved.
           </p>
         </div>
       </div>

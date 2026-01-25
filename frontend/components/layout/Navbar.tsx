@@ -2,8 +2,8 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Button } from '@/components/ui'
-import { BookOpen, Menu, X } from 'lucide-react'
+import { Button, Logo } from '@/components/ui'
+import { Menu, X } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 
@@ -47,11 +47,8 @@ export function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
-          <Link href={isLoggedIn ? '/dashboard' : '/'} className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-primary-500 rounded-lg flex items-center justify-center">
-              <BookOpen className="w-5 h-5 text-white" />
-            </div>
-            <span className="text-lg font-semibold text-dark-100">Book2Course</span>
+          <Link href={isLoggedIn ? '/dashboard' : '/'}>
+            <Logo size="sm" />
           </Link>
 
           {/* Desktop Navigation */}

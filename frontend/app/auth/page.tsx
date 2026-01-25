@@ -3,8 +3,9 @@
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { BookOpen, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
+import { Logo } from '@/components/ui'
 
 type AuthStep = 'initial' | 'code-sent' | 'verifying'
 
@@ -203,11 +204,8 @@ function AuthContent() {
       <div className="w-full max-w-[400px]">
         {/* Logo */}
         <div className="flex justify-center mb-8">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-gradient-brand rounded-xl flex items-center justify-center">
-              <BookOpen className="w-6 h-6 text-white" />
-            </div>
-            <span className="text-xl font-semibold text-gray-900">Book2Course</span>
+          <Link href="/">
+            <Logo size="md" />
           </Link>
         </div>
 
