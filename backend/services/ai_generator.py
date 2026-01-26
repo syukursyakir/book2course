@@ -738,6 +738,8 @@ async def process_book_to_course(
 
             # Get source text from relevant chunks
             chunk_indices = lesson.get("source_chunk_indices", [0])
+            # Ensure chunk indices are integers (AI might return strings)
+            chunk_indices = [int(i) for i in chunk_indices if str(i).isdigit()]
             source_text = "\n\n".join(
                 chunks[i] for i in chunk_indices if i < len(chunks)
             )
