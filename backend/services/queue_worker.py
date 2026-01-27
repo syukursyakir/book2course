@@ -188,6 +188,34 @@ class BookQueueWorker:
         finally:
             self._current_book_id = None
 
+    async def recover_stuck_books(self) -> int:
+        """
+        Recover books stuck in 'processing' status (from server restarts).
+        Returns the number of books recovered.
+        """
+        client = get_supabase_client()
+
+        # Find books stuck in 'processing' for more than 10 minutes
+        from datetime import datetime, timedelta
+        cutoff_time = (datetime.utcnow() - timedelta(minutes=10)).isoformat()
+
+        result = client.table("books").select("id, title").eq(
+            "status", "processing"
+        ).lt("updated_at", cutoff_time).execute()
+
+        stuck_books = result.data or []
+
+        if stuck_books:
+            print(f"[QUEUE] Found {len(stuck_books)} stuck books, resetting to queued...")
+            for book in stuck_books:
+                client.table("books").update({
+                    "status": "queued",
+                    "processing_step": "Requeued after server restart"
+                }).eq("id", book["id"]).execute()
+                print(f"[QUEUE] Reset book {book['id']} ({book.get('title', 'Untitled')}) to queued")
+
+        return len(stuck_books)
+
     async def run_worker(self) -> None:
         """Main worker loop - processes books from queue one at a time."""
         if self._is_running:
@@ -196,6 +224,14 @@ class BookQueueWorker:
 
         self._is_running = True
         print("[QUEUE] Worker started")
+
+        # Recover any stuck books on startup
+        try:
+            recovered = await self.recover_stuck_books()
+            if recovered:
+                print(f"[QUEUE] Recovered {recovered} stuck book(s)")
+        except Exception as e:
+            print(f"[QUEUE] Error recovering stuck books: {e}")
 
         try:
             while True:

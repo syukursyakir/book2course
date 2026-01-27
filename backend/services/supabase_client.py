@@ -81,8 +81,12 @@ async def create_book(
 
 async def update_book_status(book_id: str, status: str, processing_step: str = None) -> None:
     """Update book processing status and optionally the current processing step."""
+    from datetime import datetime
     client = get_supabase_client()
-    data = {"status": status}
+    data = {
+        "status": status,
+        "updated_at": datetime.utcnow().isoformat()
+    }
 
     # Try to update with processing_step first, fallback to just status
     if processing_step is not None:
@@ -92,16 +96,20 @@ async def update_book_status(book_id: str, status: str, processing_step: str = N
             return
         except Exception:
             # Column might not exist, try without it
-            data = {"status": status}
+            data = {"status": status, "updated_at": datetime.utcnow().isoformat()}
 
     client.table("books").update(data).eq("id", book_id).execute()
 
 
 async def update_book_progress(book_id: str, step: str) -> None:
     """Update the current processing step for a book."""
+    from datetime import datetime
     try:
         client = get_supabase_client()
-        client.table("books").update({"processing_step": step}).eq("id", book_id).execute()
+        client.table("books").update({
+            "processing_step": step,
+            "updated_at": datetime.utcnow().isoformat()
+        }).eq("id", book_id).execute()
     except Exception as e:
         # Silently ignore if column doesn't exist yet
         print(f"[PROGRESS] Could not update progress (column may not exist): {e}")

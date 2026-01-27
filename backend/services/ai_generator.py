@@ -624,32 +624,75 @@ Question Type Guidelines:
 correctAnswer is 0-indexed (0=A, 1=B, 2=C, 3=D)."""
 
     messages = [{"role": "user", "content": prompt}]
-    response = await call_openrouter(messages, max_tokens=6144)
 
-    try:
-        if "```json" in response:
-            response = response.split("```json")[1].split("```")[0]
-        elif "```" in response:
-            response = response.split("```")[1].split("```")[0]
-        data = json.loads(response.strip())
-        # Combine MCQ questions and short answer questions
-        questions = data.get("questions", [])
-        short_answers = data.get("short_answer", [])
-        return questions + short_answers
-    except json.JSONDecodeError:
-        # Fallback quiz
-        return [
-            {
-                "type": "mcq",
-                "difficulty": 1,
-                "question_type": "recall",
-                "id": "q1",
-                "question": f"What is the main topic of {lesson_title}?",
-                "options": ["Option A", "Option B", "Option C", "Option D"],
-                "correctAnswer": 0,
-                "explanation": "This covers the primary topic of the lesson."
-            }
-        ]
+    # Try up to 2 times to get valid quiz JSON
+    for attempt in range(2):
+        try:
+            response = await call_openrouter(messages, max_tokens=6144)
+
+            # Extract JSON from response
+            json_str = response
+            if "```json" in response:
+                json_str = response.split("```json")[1].split("```")[0]
+            elif "```" in response:
+                json_str = response.split("```")[1].split("```")[0]
+
+            # Clean up common JSON issues
+            json_str = json_str.strip()
+
+            data = json.loads(json_str)
+
+            # Validate the quiz structure
+            questions = data.get("questions", [])
+            short_answers = data.get("short_answer", [])
+
+            # Verify questions have real options (not generic placeholders)
+            valid_questions = []
+            for q in questions:
+                options = q.get("options", [])
+                # Check if options are real (not just "Option A", "Option B", etc.)
+                if options and not all(opt.startswith("Option ") for opt in options):
+                    valid_questions.append(q)
+                elif options:
+                    # Has options but they're generic - skip this question
+                    print(f"[AI] Skipping question with generic options: {q.get('question', '')[:50]}")
+
+            if valid_questions or short_answers:
+                return valid_questions + short_answers
+
+            # If no valid questions, retry
+            if attempt == 0:
+                print(f"[AI] Quiz had no valid questions, retrying...")
+                continue
+
+        except json.JSONDecodeError as e:
+            print(f"[AI] Quiz JSON parse error (attempt {attempt + 1}): {e}")
+            if attempt == 0:
+                continue
+        except Exception as e:
+            print(f"[AI] Quiz generation error (attempt {attempt + 1}): {e}")
+            if attempt == 0:
+                continue
+
+    # Final fallback - generate a simple but specific quiz
+    print(f"[AI] Using fallback quiz for: {lesson_title}")
+    return [
+        {
+            "type": "mcq",
+            "difficulty": 1,
+            "question_type": "recall",
+            "id": "q1",
+            "question": f"What is the main focus of the lesson '{lesson_title}'?",
+            "options": [
+                f"A) Understanding the core concepts of {lesson_title.split()[0] if lesson_title else 'this topic'}",
+                "B) Learning unrelated historical facts",
+                "C) Practicing advanced mathematics only",
+                "D) None of the above"
+            ],
+            "correctAnswer": 0,
+            "explanation": f"This lesson focuses on {lesson_title}, covering its key concepts and applications."
+        }
+    ]
 
 
 async def process_book_to_course(
