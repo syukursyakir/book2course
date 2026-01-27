@@ -732,22 +732,26 @@ correctAnswer is 0-indexed (0=A, 1=B, 2=C, 3=D)."""
 
     messages = [{"role": "user", "content": prompt}]
 
+    def is_placeholder_option(opt: str) -> bool:
+        """Check if an option is a generic placeholder."""
+        opt_clean = opt.strip().lower()
+        # Check for patterns like "Option A", "A)", "A.", etc.
+        placeholder_patterns = [
+            "option a", "option b", "option c", "option d",
+            "a)", "b)", "c)", "d)",
+            "a.", "b.", "c.", "d.",
+            "...", "placeholder"
+        ]
+        # Also check if option is too short to be meaningful
+        if len(opt_clean) <= 3:
+            return True
+        return any(opt_clean == p or opt_clean.startswith(p + " ") for p in placeholder_patterns)
+
     # Try up to 2 times to get valid quiz JSON
     for attempt in range(2):
         try:
             response = await call_openrouter(messages, max_tokens=6144)
-
-            # Extract JSON from response
-            json_str = response
-            if "```json" in response:
-                json_str = response.split("```json")[1].split("```")[0]
-            elif "```" in response:
-                json_str = response.split("```")[1].split("```")[0]
-
-            # Clean up common JSON issues
-            json_str = json_str.strip()
-
-            data = json.loads(json_str)
+            data = extract_json_from_response(response)
 
             # Validate the quiz structure
             questions = data.get("questions", [])
@@ -757,11 +761,15 @@ correctAnswer is 0-indexed (0=A, 1=B, 2=C, 3=D)."""
             valid_questions = []
             for q in questions:
                 options = q.get("options", [])
-                # Check if options are real (not just "Option A", "Option B", etc.)
-                if options and not all(opt.startswith("Option ") for opt in options):
-                    valid_questions.append(q)
+                # Check if all options are placeholders
+                if options and not all(is_placeholder_option(opt) for opt in options):
+                    # Also ensure the question itself is meaningful
+                    question_text = q.get("question", "")
+                    if len(question_text) > 10:
+                        valid_questions.append(q)
+                    else:
+                        print(f"[AI] Skipping question with too short text: {question_text}")
                 elif options:
-                    # Has options but they're generic - skip this question
                     print(f"[AI] Skipping question with generic options: {q.get('question', '')[:50]}")
 
             if valid_questions or short_answers:
