@@ -270,6 +270,100 @@ Make the lessons flow logically and build upon each other."""
         }
 
 
+def extract_json_from_response(response: str) -> dict:
+    """
+    Robustly extract JSON from AI response.
+    Handles various formats: raw JSON, markdown code blocks, mixed text.
+    """
+    import re
+
+    # Method 1: Try direct JSON parse
+    try:
+        return json.loads(response.strip())
+    except json.JSONDecodeError:
+        pass
+
+    # Method 2: Extract from ```json ... ``` code blocks
+    if "```json" in response:
+        try:
+            json_str = response.split("```json")[1].split("```")[0]
+            return json.loads(json_str.strip())
+        except (json.JSONDecodeError, IndexError):
+            pass
+
+    # Method 3: Extract from ``` ... ``` code blocks
+    if "```" in response:
+        try:
+            json_str = response.split("```")[1].split("```")[0]
+            return json.loads(json_str.strip())
+        except (json.JSONDecodeError, IndexError):
+            pass
+
+    # Method 4: Find JSON object pattern in text
+    json_pattern = r'\{[\s\S]*\}'
+    matches = re.findall(json_pattern, response)
+    for match in matches:
+        try:
+            # Try to find the largest valid JSON
+            result = json.loads(match)
+            if isinstance(result, dict) and len(result) > 2:
+                return result
+        except json.JSONDecodeError:
+            continue
+
+    # Method 5: Check if response itself is escaped JSON
+    if response.startswith('"') and response.endswith('"'):
+        try:
+            unescaped = json.loads(response)
+            if isinstance(unescaped, str):
+                return json.loads(unescaped)
+        except json.JSONDecodeError:
+            pass
+
+    raise json.JSONDecodeError("Could not extract JSON", response, 0)
+
+
+def validate_lesson_content(content: dict, lesson_title: str, topics: List[str]) -> dict:
+    """
+    Validate and fix lesson content structure.
+    Ensures all required fields exist with meaningful content.
+    """
+    # Check for nested JSON bug - if explanation contains JSON, try to parse it
+    explanation = content.get("explanation", "")
+    if isinstance(explanation, str) and explanation.strip().startswith("{"):
+        try:
+            nested = json.loads(explanation)
+            if isinstance(nested, dict):
+                # The explanation contained the actual content - merge it
+                content = {**content, **nested}
+                # Set explanation to the nested one if it exists
+                if "explanation" in nested:
+                    content["explanation"] = nested["explanation"]
+        except json.JSONDecodeError:
+            pass
+
+    # Ensure keyPoints have actual content
+    key_points = content.get("keyPoints", [])
+    if not key_points or all(not kp.get("title") and not kp.get("description") for kp in key_points):
+        # Generate meaningful key points from topics
+        content["keyPoints"] = [
+            {"title": f"Understanding {topic}", "description": f"Core concepts related to {topic}"}
+            for topic in topics[:3]
+        ] if topics else []
+
+    # Ensure introduction is meaningful
+    intro = content.get("introduction", "")
+    if not intro or intro == f"In this lesson, we'll explore {lesson_title}.":
+        content["introduction"] = f"This lesson covers {lesson_title}, focusing on {', '.join(topics[:2]) if topics else 'key concepts'}. Understanding these fundamentals is essential for building a strong foundation."
+
+    # Ensure summary is meaningful
+    summary = content.get("summary", "")
+    if not summary or summary == f"This lesson covered the key aspects of {lesson_title}.":
+        content["summary"] = f"In this lesson, we explored {lesson_title}. The key concepts covered will help you understand and apply these principles in practice."
+
+    return content
+
+
 async def generate_lesson_content_preserve(
     lesson_title: str,
     topics: List[str],
@@ -282,28 +376,28 @@ Lesson: {lesson_title}
 Topics to cover: {', '.join(topics)}
 Source Content: {source_text[:15000]}
 
-Generate this lesson structure:
+Generate this lesson structure as valid JSON:
 
 {{
   "introduction": "Brief intro to what this lesson covers (2-3 sentences, faithful to source)",
 
-  "explanation": "Main content - preserve technical accuracy, use the source's terminology and examples, organize into clear paragraphs",
+  "explanation": "Main content - preserve technical accuracy, use the source's terminology and examples, organize into clear paragraphs. This should be a substantial explanation of 3-5 paragraphs.",
 
   "key_concepts": [
-    {{"term": "...", "definition": "... (from source)"}}
+    {{"term": "concept name", "definition": "clear definition from source"}}
   ],
 
   "examples": [
-    {{"title": "Example title", "content": "... (use examples FROM the source material, don't invent new ones)"}}
+    {{"title": "Example title", "content": "detailed example from the source material"}}
   ],
 
   "keyPoints": [
-    {{"title": "Key takeaway 1", "description": "Explanation"}},
-    {{"title": "Key takeaway 2", "description": "Explanation"}},
-    {{"title": "Key takeaway 3", "description": "Explanation"}}
+    {{"title": "Key takeaway title", "description": "Detailed explanation of this key point"}},
+    {{"title": "Another key point", "description": "Detailed explanation"}},
+    {{"title": "Third key point", "description": "Detailed explanation"}}
   ],
 
-  "summary": "Summary paragraph of what was learned",
+  "summary": "Summary paragraph of what was learned (2-3 sentences)",
 
   "before_you_move_on": [
     "Make sure you can explain X in your own words",
@@ -313,30 +407,37 @@ Generate this lesson structure:
 }}
 
 IMPORTANT:
+- Return ONLY the JSON object, no other text
 - Do NOT add examples or information not in the source
 - Do NOT simplify technical content - preserve depth
-- DO organize and structure clearly
-- DO extract the most important concepts"""
+- Ensure keyPoints have both title AND description filled in
+- DO organize and structure clearly"""
 
     messages = [{"role": "user", "content": prompt}]
-    response = await call_openrouter(messages, max_tokens=6144)
 
-    try:
-        if "```json" in response:
-            response = response.split("```json")[1].split("```")[0]
-        elif "```" in response:
-            response = response.split("```")[1].split("```")[0]
-        return json.loads(response.strip())
-    except json.JSONDecodeError:
-        return {
-            "introduction": f"In this lesson, we'll explore {lesson_title}.",
-            "explanation": response,
-            "key_concepts": [],
-            "examples": [],
-            "keyPoints": [{"title": t, "description": ""} for t in topics],
-            "summary": f"This lesson covered the key aspects of {lesson_title}.",
-            "before_you_move_on": []
-        }
+    # Try up to 2 times to get valid content
+    for attempt in range(2):
+        try:
+            response = await call_openrouter(messages, max_tokens=6144)
+            content = extract_json_from_response(response)
+            content = validate_lesson_content(content, lesson_title, topics)
+            return content
+        except json.JSONDecodeError as e:
+            print(f"[AI] Lesson content JSON parse error (attempt {attempt + 1}): {e}")
+            if attempt == 0:
+                continue
+
+    # Final fallback with meaningful content
+    print(f"[AI] Using fallback content for: {lesson_title}")
+    return {
+        "introduction": f"This lesson covers {lesson_title}, focusing on {', '.join(topics[:2]) if topics else 'essential concepts'}. Understanding these fundamentals is crucial for your learning journey.",
+        "explanation": f"In studying {lesson_title}, we explore several important concepts. {source_text[:1500] if source_text else 'The material covers foundational principles that build upon each other.'}",
+        "key_concepts": [{"term": topic, "definition": f"A fundamental concept in {lesson_title}"} for topic in topics[:3]],
+        "examples": [],
+        "keyPoints": [{"title": f"Understanding {topic}", "description": f"Master the core principles of {topic}"} for topic in topics[:3]],
+        "summary": f"This lesson covered the essential aspects of {lesson_title}. Review the key concepts and ensure you understand how they connect.",
+        "before_you_move_on": [f"Make sure you understand {topic}" for topic in topics[:3]]
+    }
 
 
 async def generate_lesson_content_enhance(
@@ -351,80 +452,85 @@ Lesson: {lesson_title}
 Topics to cover: {', '.join(topics)}
 Source Content: {source_text[:15000]}
 
-Generate this lesson structure:
+Generate this lesson structure as valid JSON:
 
 {{
-  "introduction": "Brief intro - make it engaging, tell them WHY this matters",
+  "introduction": "Brief intro - make it engaging, tell them WHY this matters (2-3 sentences)",
 
-  "explanation": "Main content - take the source concepts BUT:
+  "explanation": "Main content - substantial explanation of 3-5 paragraphs. Take the source concepts BUT:
     - If advice is vague, make it specific
     - If there are no examples, ADD concrete real-world examples
     - If it says 'learn X', say exactly HOW to learn X
-    - Cut any fluff or obvious statements
-    - Add what most people get WRONG about this topic",
+    - Cut any fluff or obvious statements",
 
   "key_concepts": [
-    {{"term": "...", "definition": "... (clear, practical definition)"}}
+    {{"term": "concept name", "definition": "clear, practical definition"}}
   ],
 
   "examples": [
-    {{"title": "Concrete example 1", "content": "Specific scenario, not generic"}},
+    {{"title": "Concrete example 1", "content": "Specific scenario with details"}},
     {{"title": "Concrete example 2", "content": "Real-world application"}}
   ],
 
   "common_mistakes": [
-    {{"mistake": "What people typically get wrong about this", "correction": "The right approach"}},
-    {{"mistake": "Misconception to avoid", "correction": "What to do instead"}}
+    {{"mistake": "What people typically get wrong", "correction": "The right approach"}},
+    {{"mistake": "Common misconception", "correction": "What to do instead"}}
   ],
 
   "actionable_steps": [
-    {{"step": "Specific step 1 you can do today", "details": "Concrete details on how"}},
-    {{"step": "Specific step 2 with concrete details", "details": "More specifics"}}
+    {{"step": "Specific action step 1", "details": "How to do this concretely"}},
+    {{"step": "Specific action step 2", "details": "More specifics"}}
   ],
 
   "keyPoints": [
-    {{"title": "Key takeaway 1", "description": "Explanation"}},
-    {{"title": "Key takeaway 2", "description": "Explanation"}},
-    {{"title": "Key takeaway 3", "description": "Explanation"}}
+    {{"title": "Key takeaway title 1", "description": "Detailed explanation of this point"}},
+    {{"title": "Key takeaway title 2", "description": "Detailed explanation"}},
+    {{"title": "Key takeaway title 3", "description": "Detailed explanation"}}
   ],
 
-  "summary": "Summary paragraph of what was learned",
+  "summary": "Summary paragraph of what was learned (2-3 sentences)",
 
   "before_you_move_on": [
-    "Make sure you can explain X in your own words",
-    "Make sure you understand why Y matters",
-    "Make sure you can do Z without looking"
+    "Specific thing to verify you understand",
+    "Another checkpoint",
+    "Third verification point"
   ]
 }}
 
 IMPORTANT:
+- Return ONLY the JSON object, no other text
 - DO add concrete examples from your knowledge
 - DO rewrite vague advice into specific actionable steps
-- DO add "common mistakes" section
-- DO cut fluffy obvious statements
+- Ensure ALL keyPoints have both title AND description filled in with real content
 - PRESERVE the core concepts from source, just make them better"""
 
     messages = [{"role": "user", "content": prompt}]
-    response = await call_openrouter(messages, max_tokens=6144)
 
-    try:
-        if "```json" in response:
-            response = response.split("```json")[1].split("```")[0]
-        elif "```" in response:
-            response = response.split("```")[1].split("```")[0]
-        return json.loads(response.strip())
-    except json.JSONDecodeError:
-        return {
-            "introduction": f"In this lesson, we'll explore {lesson_title}.",
-            "explanation": response,
-            "key_concepts": [],
-            "examples": [],
-            "common_mistakes": [],
-            "actionable_steps": [],
-            "keyPoints": [{"title": t, "description": ""} for t in topics],
-            "summary": f"This lesson covered the key aspects of {lesson_title}.",
-            "before_you_move_on": []
-        }
+    # Try up to 2 times to get valid content
+    for attempt in range(2):
+        try:
+            response = await call_openrouter(messages, max_tokens=6144)
+            content = extract_json_from_response(response)
+            content = validate_lesson_content(content, lesson_title, topics)
+            return content
+        except json.JSONDecodeError as e:
+            print(f"[AI] Lesson content JSON parse error (attempt {attempt + 1}): {e}")
+            if attempt == 0:
+                continue
+
+    # Final fallback with meaningful content
+    print(f"[AI] Using fallback content for: {lesson_title}")
+    return {
+        "introduction": f"This lesson covers {lesson_title}, an important topic that will help you develop practical skills. Understanding these concepts is essential for real-world applications.",
+        "explanation": f"Let's dive into {lesson_title}. {source_text[:1500] if source_text else 'This topic encompasses several key principles that work together.'}",
+        "key_concepts": [{"term": topic, "definition": f"A core concept in {lesson_title} that you need to master"} for topic in topics[:3]],
+        "examples": [{"title": f"Applying {topics[0] if topics else lesson_title}", "content": "Consider how this applies in practice..."}],
+        "common_mistakes": [{"mistake": "Rushing without understanding fundamentals", "correction": "Take time to understand each concept before moving on"}],
+        "actionable_steps": [{"step": f"Practice {topics[0] if topics else 'the concepts'}", "details": "Work through examples to reinforce your understanding"}],
+        "keyPoints": [{"title": f"Master {topic}", "description": f"Understanding {topic} is crucial for applying these concepts"} for topic in topics[:3]],
+        "summary": f"This lesson covered {lesson_title}. Apply what you've learned through practice and review.",
+        "before_you_move_on": [f"Verify you understand {topic}" for topic in topics[:3]]
+    }
 
 
 async def generate_lesson_content(
