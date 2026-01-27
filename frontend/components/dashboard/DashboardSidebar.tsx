@@ -11,7 +11,10 @@ import {
   HelpCircle,
   ChevronUp,
   X,
-  Library
+  Library,
+  Zap,
+  Sparkles,
+  Crown
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Logo } from '@/components/ui'
@@ -37,6 +40,7 @@ const secondaryNavItems: NavItem[] = [
 
 interface UsageData {
   credits: number
+  tier: 'free' | 'basic' | 'pro'
   book_cost: number
   notes_cost: number
 }
@@ -148,13 +152,34 @@ export function DashboardSidebar({ usageData, isOpen, onClose }: DashboardSideba
           </div>
         </nav>
 
-        {/* Credits Badge at Bottom */}
+        {/* Plan & Credits Badge at Bottom */}
         <div className="p-4 border-t border-dark-800">
           {usageData ? (
             <div className={cn(
               'rounded-xl p-4 border',
               getCreditsColor(usageData.credits)
             )}>
+              {/* Plan Badge - Prominent display */}
+              <div className="mb-3">
+                {usageData.tier === 'pro' ? (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-purple-500/20 to-pink-500/20 border border-purple-500/30 rounded-lg">
+                    <Crown className="w-4 h-4 text-purple-400" />
+                    <span className="text-sm font-bold text-purple-400">Pro Plan</span>
+                  </div>
+                ) : usageData.tier === 'basic' ? (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 border border-blue-500/30 rounded-lg">
+                    <Sparkles className="w-4 h-4 text-blue-400" />
+                    <span className="text-sm font-bold text-blue-400">Starter Plan</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 px-3 py-1.5 bg-dark-800/50 border border-dark-700 rounded-lg">
+                    <Zap className="w-4 h-4 text-dark-400" />
+                    <span className="text-sm font-bold text-dark-400">Free Plan</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Credits display */}
               <div className="flex items-center justify-between mb-3">
                 <span className="text-sm font-medium text-dark-300">Credits</span>
                 <span className={cn('text-2xl font-bold', getCreditsTextColor(usageData.credits))}>
@@ -174,13 +199,13 @@ export function DashboardSidebar({ usageData, isOpen, onClose }: DashboardSideba
                 </div>
               </div>
 
-              {/* Buy credits button */}
+              {/* Upgrade/Buy credits button */}
               <Link
                 href="/pricing"
                 className="flex items-center justify-center gap-1 w-full py-2 bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium rounded-lg transition-colors"
               >
                 <ChevronUp className="w-4 h-4" />
-                Buy Credits
+                {usageData.tier === 'free' ? 'Upgrade Plan' : 'Buy Credits'}
               </Link>
             </div>
           ) : (

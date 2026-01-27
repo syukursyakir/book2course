@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Please analyze the entire codebase structure before proceeding with any task. Use the Explore agent to understand the frontend (Next.js/TypeScript), backend (FastAPI/Python), and how they connect.'"
+          }
+        ]
+      }
+    ]
+  }
+}

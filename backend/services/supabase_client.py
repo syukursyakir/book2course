@@ -427,13 +427,34 @@ async def check_upload_allowed(user_id: str, upload_type: str) -> dict:
 
 async def get_user_usage(user_id: str) -> dict:
     """
-    Get user's credit info.
-    Returns credits balance and cost info.
+    Get user's credit info including tier.
+    Returns credits balance, tier, and cost info.
     """
-    credits = await get_user_credits(user_id)
+    try:
+        client = get_supabase_client()
+        result = client.table("profiles").select("credits, tier").eq("user_id", user_id).execute()
 
-    return {
-        "credits": credits,
-        "book_cost": CREDIT_COST_BOOK,
-        "notes_cost": CREDIT_COST_NOTES
-    }
+        if not result.data:
+            await ensure_user_profile(user_id)
+            return {
+                "credits": DEFAULT_FREE_CREDITS,
+                "tier": "free",
+                "book_cost": CREDIT_COST_BOOK,
+                "notes_cost": CREDIT_COST_NOTES
+            }
+
+        profile = result.data[0]
+        return {
+            "credits": profile.get("credits", DEFAULT_FREE_CREDITS),
+            "tier": profile.get("tier", "free"),
+            "book_cost": CREDIT_COST_BOOK,
+            "notes_cost": CREDIT_COST_NOTES
+        }
+    except Exception as e:
+        print(f"[CREDITS] Error getting usage: {e}")
+        return {
+            "credits": 0,
+            "tier": "free",
+            "book_cost": CREDIT_COST_BOOK,
+            "notes_cost": CREDIT_COST_NOTES
+        }

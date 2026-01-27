@@ -9,6 +9,7 @@ import { Logo } from '@/components/ui'
 
 interface UsageData {
   credits: number
+  tier: 'free' | 'basic' | 'pro'
   book_cost: number
   notes_cost: number
 }
