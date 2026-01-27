@@ -2,7 +2,7 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import auth, upload, courses, lessons, books, billing
+from routers import auth, upload, courses, lessons, books, billing, admin
 from services.queue_worker import queue_worker
 
 
@@ -46,6 +46,7 @@ app.include_router(courses.router)
 app.include_router(lessons.router)
 app.include_router(books.router)
 app.include_router(billing.router)
+app.include_router(admin.router)
 
 
 @app.get("/")
