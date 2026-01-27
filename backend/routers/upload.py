@@ -33,29 +33,23 @@ async def upload_pdf(
     if upload_type not in ("book", "notes"):
         upload_type = "notes"
 
+    # === VALIDATE FILE FIRST (before deducting credits) ===
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="File must be a PDF")
+
+    if file.size and file.size > 50 * 1024 * 1024:  # 50MB limit
+        raise HTTPException(status_code=400, detail="File size must be less than 50MB")
+
     # Check if user has enough credits
     upload_check = await check_upload_allowed(user["id"], upload_type)
     if not upload_check["allowed"]:
         raise HTTPException(status_code=403, detail=upload_check["reason"])
 
-    # Deduct credits BEFORE processing
+    # Deduct credits AFTER validation passes
     credit_cost = get_credit_cost(upload_type)
     deducted = await deduct_credits(user["id"], credit_cost)
     if not deducted:
         raise HTTPException(status_code=403, detail="Failed to deduct credits. Please try again.")
-
-    # Validate file
-    if not file.filename.lower().endswith('.pdf'):
-        # Refund credits on validation failure
-        from services.supabase_client import refund_credits
-        await refund_credits(user["id"], credit_cost)
-        raise HTTPException(status_code=400, detail="File must be a PDF")
-
-    if file.size and file.size > 50 * 1024 * 1024:  # 50MB limit
-        # Refund credits on validation failure
-        from services.supabase_client import refund_credits
-        await refund_credits(user["id"], credit_cost)
-        raise HTTPException(status_code=400, detail="File size must be less than 50MB")
 
     # Read file content
     pdf_bytes = await file.read()

@@ -22,6 +22,9 @@ class BookQueueWorker:
     _is_running: bool = False
     _current_book_id: Optional[str] = None
 
+    # Maximum time allowed for processing a single book (30 minutes)
+    PROCESSING_TIMEOUT_SECONDS = 30 * 60
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
@@ -239,7 +242,21 @@ class BookQueueWorker:
                 book = await self.get_next_queued_book()
 
                 if book:
-                    await self.process_book(book)
+                    try:
+                        # Process with timeout to prevent single book from blocking queue
+                        await asyncio.wait_for(
+                            self.process_book(book),
+                            timeout=self.PROCESSING_TIMEOUT_SECONDS
+                        )
+                    except asyncio.TimeoutError:
+                        book_id = book.get("id", "unknown")
+                        print(f"[QUEUE] Book {book_id} timed out after {self.PROCESSING_TIMEOUT_SECONDS}s")
+                        await update_book_status(
+                            book_id,
+                            "error",
+                            f"Error: Processing timed out after 30 minutes"
+                        )
+                        self._current_book_id = None
                 else:
                     # No books in queue, wait before checking again
                     await asyncio.sleep(5)

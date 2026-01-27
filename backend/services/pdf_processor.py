@@ -69,15 +69,66 @@ def chunk_text(text: str, chunk_size: int = 8000, overlap: int = 300) -> List[st
     return chunks
 
 
+def extract_title_from_first_page(reader: PdfReader) -> str:
+    """Try to extract title from first page content."""
+    try:
+        if len(reader.pages) > 0:
+            first_page_text = reader.pages[0].extract_text() or ""
+            lines = first_page_text.strip().split('\n')
+
+            # Filter out very short lines and empty lines
+            meaningful_lines = [
+                line.strip() for line in lines[:10]
+                if line.strip() and len(line.strip()) > 5 and len(line.strip()) < 150
+            ]
+
+            if meaningful_lines:
+                # Usually the title is one of the first substantial lines
+                # Skip lines that look like headers/dates/page numbers
+                for line in meaningful_lines[:5]:
+                    line_lower = line.lower()
+                    # Skip common non-title patterns
+                    skip_patterns = [
+                        'page', 'chapter', 'table of contents', 'copyright',
+                        'all rights reserved', 'isbn', 'www.', 'http',
+                        'edition', 'published', 'printed'
+                    ]
+                    if not any(pattern in line_lower for pattern in skip_patterns):
+                        # Check if it looks like a title (mostly letters, reasonable length)
+                        alpha_ratio = sum(c.isalpha() or c.isspace() for c in line) / max(len(line), 1)
+                        if alpha_ratio > 0.7 and 10 < len(line) < 100:
+                            return line.strip()
+    except Exception:
+        pass
+    return ""
+
+
 def get_pdf_metadata(pdf_bytes: bytes) -> dict:
-    """Extract metadata from PDF."""
+    """Extract metadata from PDF with improved title extraction."""
     pdf_file = io.BytesIO(pdf_bytes)
     reader = PdfReader(pdf_file)
 
     metadata = reader.metadata
+    title = "Untitled"
+
+    # Strategy 1: Try PDF metadata
+    if metadata:
+        meta_title = metadata.get("/Title", "")
+        if meta_title and meta_title.strip() and meta_title.strip().lower() != "untitled":
+            # Clean up the title
+            title = meta_title.strip()
+            # Remove common suffixes like ".pdf"
+            if title.lower().endswith('.pdf'):
+                title = title[:-4]
+
+    # Strategy 2: If metadata title is generic, try first page
+    if title in ["Untitled", "", "Microsoft Word", "Document"]:
+        extracted_title = extract_title_from_first_page(reader)
+        if extracted_title:
+            title = extracted_title
 
     return {
-        "title": metadata.get("/Title", "Untitled") if metadata else "Untitled",
+        "title": title,
         "author": metadata.get("/Author", "Unknown") if metadata else "Unknown",
         "pages": len(reader.pages),
         "has_text": any(page.extract_text() for page in reader.pages)

@@ -8,7 +8,8 @@ load_dotenv()
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-MODEL = "google/gemini-2.0-flash-001"
+# AI Model - configurable via environment variable
+MODEL = os.getenv("AI_MODEL", "google/gemini-2.0-flash-001")
 
 
 async def call_openrouter(

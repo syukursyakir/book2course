@@ -88,8 +88,6 @@ export function PDFUploader({ uploadType = 'notes', onUploadComplete }: PDFUploa
       const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
 
-      console.log('Session:', session) // Debug log
-
       if (!session) {
         setError('Please sign in to upload files')
         setIsUploading(false)
@@ -104,7 +102,6 @@ export function PDFUploader({ uploadType = 'notes', onUploadComplete }: PDFUploa
       formData.append('upload_type', uploadType)
 
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-      console.log('Uploading to:', `${apiUrl}/api/upload`) // Debug log
 
       const response = await fetch(`${apiUrl}/api/upload`, {
         method: 'POST',
@@ -114,8 +111,6 @@ export function PDFUploader({ uploadType = 'notes', onUploadComplete }: PDFUploa
         body: formData,
       })
 
-      console.log('Response status:', response.status) // Debug log
-
       setUploadProgress(80)
 
       if (!response.ok) {
@@ -124,12 +119,11 @@ export function PDFUploader({ uploadType = 'notes', onUploadComplete }: PDFUploa
       }
 
       const data = await response.json()
-      console.log('Upload response:', data) // Debug log
       setUploadProgress(100)
       setIsComplete(true)
       onUploadComplete?.(data.book_id)
     } catch (err) {
-      console.error('Upload error:', err) // Debug log
+      console.error('Upload error:', err)
       setError(err instanceof Error ? err.message : 'Upload failed. Please try again.')
     } finally {
       setIsUploading(false)

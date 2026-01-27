@@ -133,3 +133,100 @@ async def get_progress(course_id: str, user: dict = Depends(get_current_user)):
 
     progress = await get_user_progress(user["id"], course_id)
     return progress
+
+
+@router.get("/analytics/quiz")
+async def get_quiz_analytics(user: dict = Depends(get_current_user)):
+    """Get quiz performance analytics for the user."""
+    client = get_supabase_client()
+
+    # Get all progress records with quiz scores for this user
+    progress_result = client.table("progress").select(
+        "quiz_score, lesson_id, created_at, lessons(title, chapter_id, chapters(title, course_id, courses(title)))"
+    ).eq("user_id", user["id"]).not_.is_("quiz_score", "null").order("created_at", desc=True).execute()
+
+    records = progress_result.data or []
+
+    if not records:
+        return {
+            "total_quizzes": 0,
+            "average_score": 0,
+            "best_score": 0,
+            "worst_score": 0,
+            "recent_trend": [],
+            "by_course": [],
+            "weak_areas": [],
+            "strong_areas": []
+        }
+
+    # Calculate statistics
+    scores = [r["quiz_score"] for r in records if r["quiz_score"] is not None]
+    total_quizzes = len(scores)
+    average_score = sum(scores) / total_quizzes if scores else 0
+    best_score = max(scores) if scores else 0
+    worst_score = min(scores) if scores else 0
+
+    # Recent trend (last 10 quizzes)
+    recent_trend = [
+        {
+            "lesson": r["lessons"]["title"] if r.get("lessons") else "Unknown",
+            "score": r["quiz_score"],
+            "date": r["created_at"]
+        }
+        for r in records[:10]
+    ]
+
+    # Group by course
+    course_scores = {}
+    for r in records:
+        try:
+            course_title = r["lessons"]["chapters"]["courses"]["title"]
+            course_id = r["lessons"]["chapters"]["courses"]["title"]  # Using title as key
+        except (KeyError, TypeError):
+            course_title = "Unknown Course"
+            course_id = "unknown"
+
+        if course_id not in course_scores:
+            course_scores[course_id] = {"title": course_title, "scores": []}
+        course_scores[course_id]["scores"].append(r["quiz_score"])
+
+    by_course = [
+        {
+            "course": data["title"],
+            "quizzes_taken": len(data["scores"]),
+            "average_score": sum(data["scores"]) / len(data["scores"]) if data["scores"] else 0
+        }
+        for data in course_scores.values()
+    ]
+
+    # Identify weak and strong areas (by chapter)
+    chapter_scores = {}
+    for r in records:
+        try:
+            chapter_title = r["lessons"]["chapters"]["title"]
+        except (KeyError, TypeError):
+            chapter_title = "Unknown Chapter"
+
+        if chapter_title not in chapter_scores:
+            chapter_scores[chapter_title] = []
+        chapter_scores[chapter_title].append(r["quiz_score"])
+
+    chapter_averages = [
+        {"chapter": title, "average": sum(scores) / len(scores)}
+        for title, scores in chapter_scores.items()
+    ]
+    chapter_averages.sort(key=lambda x: x["average"])
+
+    weak_areas = chapter_averages[:3] if len(chapter_averages) >= 3 else chapter_averages
+    strong_areas = chapter_averages[-3:][::-1] if len(chapter_averages) >= 3 else chapter_averages[::-1]
+
+    return {
+        "total_quizzes": total_quizzes,
+        "average_score": round(average_score, 1),
+        "best_score": best_score,
+        "worst_score": worst_score,
+        "recent_trend": recent_trend,
+        "by_course": by_course,
+        "weak_areas": weak_areas,
+        "strong_areas": strong_areas
+    }
