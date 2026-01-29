@@ -735,17 +735,21 @@ correctAnswer is 0-indexed (0=A, 1=B, 2=C, 3=D)."""
     def is_placeholder_option(opt: str) -> bool:
         """Check if an option is a generic placeholder."""
         opt_clean = opt.strip().lower()
-        # Check for patterns like "Option A", "A)", "A.", etc.
-        placeholder_patterns = [
-            "option a", "option b", "option c", "option d",
-            "a)", "b)", "c)", "d)",
-            "a.", "b.", "c.", "d.",
-            "...", "placeholder"
-        ]
-        # Also check if option is too short to be meaningful
-        if len(opt_clean) <= 3:
+
+        # Strip common letter prefixes like "A) ", "B. ", etc.
+        import re
+        content = re.sub(r'^[a-d][\)\.\:]?\s*', '', opt_clean).strip()
+
+        # After stripping prefix, check if there's meaningful content
+        if len(content) <= 3:
             return True
-        return any(opt_clean == p or opt_clean.startswith(p + " ") for p in placeholder_patterns)
+
+        # Check for exact placeholder patterns
+        placeholder_exact = ["option a", "option b", "option c", "option d", "...", "placeholder"]
+        if content in placeholder_exact:
+            return True
+
+        return False
 
     # Try up to 2 times to get valid quiz JSON
     for attempt in range(2):
