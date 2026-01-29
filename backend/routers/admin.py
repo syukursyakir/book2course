@@ -77,13 +77,13 @@ async def delete_error_course(course_id: str, user: dict = Depends(require_admin
     """Delete a course in error state."""
     client = get_supabase_client()
 
-    # Check course exists and is in error state
-    course = client.table("courses").select("id, status, book_id").eq("id", course_id).single().execute()
+    # Check course exists
+    course = client.table("courses").select("id, status, book_id").eq("id", course_id).execute()
 
     if not course.data:
         raise HTTPException(status_code=404, detail="Course not found")
 
-    book_id = course.data.get("book_id")
+    book_id = course.data[0].get("book_id")
 
     # Delete course (cascades to chapters -> lessons)
     client.table("courses").delete().eq("id", course_id).execute()
@@ -101,7 +101,7 @@ async def reprocess_book(book_id: str, user: dict = Depends(require_admin)):
     client = get_supabase_client()
 
     # Check book exists
-    book = client.table("books").select("id, status").eq("id", book_id).single().execute()
+    book = client.table("books").select("id, status").eq("id", book_id).execute()
 
     if not book.data:
         raise HTTPException(status_code=404, detail="Book not found")

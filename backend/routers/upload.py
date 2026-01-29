@@ -113,6 +113,7 @@ async def get_usage(user: dict = Depends(get_current_user)):
 
     return {
         "credits": usage["credits"],
+        "tier": usage.get("tier", "free"),
         "book_cost": usage["book_cost"],
         "notes_cost": usage["notes_cost"]
     }
