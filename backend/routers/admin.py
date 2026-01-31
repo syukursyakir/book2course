@@ -74,25 +74,33 @@ async def fix_lesson_content(user: dict = Depends(require_admin)):
 
 @router.delete("/courses/{course_id}")
 async def delete_error_course(course_id: str, user: dict = Depends(require_admin)):
-    """Delete a course in error state."""
+    """Delete a course (or error book shown as course) by ID."""
     client = get_supabase_client()
 
-    # Check course exists
+    deleted_items = []
+
+    # Try to find and delete from courses table
     course = client.table("courses").select("id, status, book_id").eq("id", course_id).execute()
+    if course.data:
+        book_id = course.data[0].get("book_id")
+        client.table("courses").delete().eq("id", course_id).execute()
+        deleted_items.append(f"course:{course_id}")
+        if book_id:
+            client.table("books").delete().eq("id", book_id).execute()
+            deleted_items.append(f"book:{book_id}")
 
-    if not course.data:
-        raise HTTPException(status_code=404, detail="Course not found")
+    # Also try to find and delete from books table (error books show as courses in API)
+    book = client.table("books").select("id, status").eq("id", course_id).execute()
+    if book.data:
+        # Delete any course referencing this book first
+        client.table("courses").delete().eq("book_id", course_id).execute()
+        client.table("books").delete().eq("id", course_id).execute()
+        deleted_items.append(f"book:{course_id}")
 
-    book_id = course.data[0].get("book_id")
+    if not deleted_items:
+        raise HTTPException(status_code=404, detail="Course or book not found")
 
-    # Delete course (cascades to chapters -> lessons)
-    client.table("courses").delete().eq("id", course_id).execute()
-
-    # Delete associated book
-    if book_id:
-        client.table("books").delete().eq("id", book_id).execute()
-
-    return {"deleted": True, "course_id": course_id}
+    return {"deleted": True, "items": deleted_items}
 
 
 @router.post("/reprocess/{book_id}")
@@ -132,7 +140,7 @@ async def get_admin_stats(user: dict = Depends(require_admin)):
     books = client.table("books").select("status").execute()
     courses = client.table("courses").select("status").execute()
     lessons = client.table("lessons").select("id").execute()
-    users = client.table("profiles").select("id, tier").execute()
+    users = client.table("profiles").select("user_id, tier").execute()
 
     book_stats = {}
     for b in books.data or []:
