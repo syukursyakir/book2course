@@ -236,6 +236,81 @@ def compute_course_dimensions(num_chunks: int) -> Dict[str, Any]:
     }
 
 
+def _enforce_lesson_cap(structure: Dict[str, Any], target_lessons: int) -> Dict[str, Any]:
+    """
+    If the AI returned more lessons than target_lessons, merge adjacent lessons
+    within each chapter proportionally until total <= target_lessons.
+    """
+    chapters = structure.get("chapters", [])
+    total = sum(len(ch.get("lessons", [])) for ch in chapters)
+
+    if total <= target_lessons:
+        return structure
+
+    print(f"[AI] Lesson cap exceeded: {total} > {target_lessons}, merging excess lessons")
+
+    # Calculate how many lessons each chapter should keep (proportional)
+    for ch in chapters:
+        ch_lessons = ch.get("lessons", [])
+        if not ch_lessons:
+            continue
+        # Each chapter keeps at least 1 lesson, proportional share of target
+        ch_share = max(1, round(len(ch_lessons) * target_lessons / total))
+        if len(ch_lessons) <= ch_share:
+            continue
+
+        # Merge adjacent lessons until we reach ch_share
+        merged = []
+        step = len(ch_lessons) / ch_share
+        for i in range(ch_share):
+            start = int(i * step)
+            end = int((i + 1) * step)
+            group = ch_lessons[start:end]
+            if len(group) == 1:
+                merged.append(group[0])
+            else:
+                # Merge group into one lesson
+                combined_title = group[0].get("title", "Lesson")
+                combined_topics = []
+                combined_chunks = []
+                for lesson in group:
+                    combined_topics.extend(lesson.get("topics_to_cover", []))
+                    combined_chunks.extend(lesson.get("source_chunk_indices", []))
+                # Deduplicate
+                combined_topics = list(dict.fromkeys(combined_topics))
+                combined_chunks = sorted(set(combined_chunks))
+                merged.append({
+                    "title": combined_title,
+                    "topics_to_cover": combined_topics,
+                    "source_chunk_indices": combined_chunks
+                })
+        ch["lessons"] = merged
+
+    new_total = sum(len(ch.get("lessons", [])) for ch in chapters)
+
+    # Correction pass: if still over cap, merge more in largest chapters
+    while new_total > target_lessons:
+        # Find chapter with most lessons
+        largest_ch = max(chapters, key=lambda c: len(c.get("lessons", [])))
+        ch_lessons = largest_ch.get("lessons", [])
+        if len(ch_lessons) <= 1:
+            break  # Can't merge further
+        # Merge last two lessons
+        last = ch_lessons.pop()
+        second_last = ch_lessons[-1]
+        second_last["topics_to_cover"] = list(dict.fromkeys(
+            second_last.get("topics_to_cover", []) + last.get("topics_to_cover", [])
+        ))
+        second_last["source_chunk_indices"] = sorted(set(
+            second_last.get("source_chunk_indices", []) + last.get("source_chunk_indices", [])
+        ))
+        new_total -= 1
+
+    print(f"[AI] After merging: {new_total} lessons (was {total})")
+    structure["chapters"] = chapters
+    return structure
+
+
 async def generate_course_structure(
     book_overview: Dict[str, Any],
     chunk_summaries: List[Dict[str, Any]]
@@ -275,9 +350,12 @@ The book has {num_chunks} content chunks. Here is what each chunk covers:
 {chunk_manifest}
 
 Create a course with {dims['min_chapters']}-{dims['max_chapters']} chapters, each with {dims['min_lessons_per_chapter']}-{dims['max_lessons_per_chapter']} lessons.
-Target approximately {dims['target_lessons']} total lessons.
+You MUST create NO MORE THAN {dims['target_lessons']} total lessons. This is a hard maximum.
 
-CRITICAL REQUIREMENT: EVERY chunk index from 0 through {num_chunks - 1} MUST appear in at least one lesson's source_chunk_indices. Do NOT skip any chunks. A lesson may reference multiple chunks if they cover related topics, and a chunk may appear in multiple lessons.{grouping_hint}
+CRITICAL REQUIREMENTS:
+1. EVERY chunk index from 0 through {num_chunks - 1} MUST appear in at least one lesson's source_chunk_indices. Do NOT skip any chunks.
+2. DO NOT exceed {dims['target_lessons']} total lessons. Combine multiple chunks into each lesson to stay within the limit.
+3. A lesson may reference multiple chunks if they cover related topics, and a chunk may appear in multiple lessons.{grouping_hint}
 
 Respond in JSON format:
 {{
@@ -307,7 +385,8 @@ Make the lessons flow logically and build upon each other."""
             response = response.split("```json")[1].split("```")[0]
         elif "```" in response:
             response = response.split("```")[1].split("```")[0]
-        return json.loads(response.strip())
+        parsed = json.loads(response.strip())
+        return _enforce_lesson_cap(parsed, dims['target_lessons'])
     except json.JSONDecodeError:
         # Fallback: create 1 lesson per chunk, grouped into chapters of ~4
         chapters = []
