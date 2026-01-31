@@ -205,11 +205,65 @@ Generate a book overview in JSON format:
         }
 
 
+def compute_course_dimensions(num_chunks: int) -> Dict[str, Any]:
+    """Scale chapter/lesson counts based on the number of source chunks."""
+    if num_chunks <= 5:
+        min_chapters, max_chapters = 2, 3
+        target_lessons = max(num_chunks, 5)
+    elif num_chunks <= 15:
+        min_chapters, max_chapters = 3, 6
+        target_lessons = int(num_chunks * 1.2)
+    elif num_chunks <= 30:
+        min_chapters, max_chapters = 5, 10
+        target_lessons = int(num_chunks * 1.1)
+    elif num_chunks <= 50:
+        min_chapters, max_chapters = 8, 12
+        target_lessons = min(35, int(num_chunks * 0.7))
+    else:
+        min_chapters, max_chapters = 10, 15
+        target_lessons = min(35, int(num_chunks * 0.5))
+
+    # Derive lessons-per-chapter range
+    avg_lessons_per_chapter = max(2, target_lessons // max_chapters)
+    max_lessons_per_chapter = min(6, target_lessons // min_chapters + 1)
+
+    return {
+        "min_chapters": min_chapters,
+        "max_chapters": max_chapters,
+        "target_lessons": target_lessons,
+        "min_lessons_per_chapter": 2,
+        "max_lessons_per_chapter": max_lessons_per_chapter,
+    }
+
+
 async def generate_course_structure(
     book_overview: Dict[str, Any],
     chunk_summaries: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
     """Generate the course structure with chapters and lessons."""
+    num_chunks = len(chunk_summaries)
+    dims = compute_course_dimensions(num_chunks)
+
+    # Build chunk manifest - compress for large books to keep prompt manageable
+    chunk_manifest_lines = []
+    for i, summary in enumerate(chunk_summaries):
+        topics = summary.get("topics", [])
+        if num_chunks > 30:
+            # Compact format for large books: just topics
+            chunk_manifest_lines.append(f"  Chunk {i}: {topics}")
+        else:
+            snippet = summary.get("summary", "")[:150]
+            chunk_manifest_lines.append(
+                f"  Chunk {i}: topics={topics}; preview=\"{snippet}...\""
+            )
+    chunk_manifest = "\n".join(chunk_manifest_lines)
+
+    # For large books, add grouping guidance
+    chunks_per_lesson = max(1, num_chunks // dims['target_lessons'])
+    grouping_hint = ""
+    if chunks_per_lesson >= 2:
+        grouping_hint = f"\nEach lesson should combine {chunks_per_lesson}-{chunks_per_lesson + 1} related chunks. Group chunks that cover similar or sequential topics into the same lesson."
+
     prompt = f"""Create a course structure for a book with these characteristics:
 
 Title: {book_overview.get('title', 'Unknown')}
@@ -217,9 +271,13 @@ Main Themes: {', '.join(book_overview.get('main_themes', []))}
 Key Concepts: {', '.join(book_overview.get('key_concepts', []))}
 Learning Objectives: {', '.join(book_overview.get('learning_objectives', []))}
 
-The book has {len(chunk_summaries)} main sections.
+The book has {num_chunks} content chunks. Here is what each chunk covers:
+{chunk_manifest}
 
-Create a course structure with 4-8 chapters, each with 2-5 lessons. Each chapter should cover related themes.
+Create a course with {dims['min_chapters']}-{dims['max_chapters']} chapters, each with {dims['min_lessons_per_chapter']}-{dims['max_lessons_per_chapter']} lessons.
+Target approximately {dims['target_lessons']} total lessons.
+
+CRITICAL REQUIREMENT: EVERY chunk index from 0 through {num_chunks - 1} MUST appear in at least one lesson's source_chunk_indices. Do NOT skip any chunks. A lesson may reference multiple chunks if they cover related topics, and a chunk may appear in multiple lessons.{grouping_hint}
 
 Respond in JSON format:
 {{
@@ -241,7 +299,8 @@ Respond in JSON format:
 Make the lessons flow logically and build upon each other."""
 
     messages = [{"role": "user", "content": prompt}]
-    response = await call_openrouter(messages, max_tokens=8192)
+    structure_max_tokens = 12288 if num_chunks > 30 else 8192
+    response = await call_openrouter(messages, max_tokens=structure_max_tokens)
 
     try:
         if "```json" in response:
@@ -250,24 +309,119 @@ Make the lessons flow logically and build upon each other."""
             response = response.split("```")[1].split("```")[0]
         return json.loads(response.strip())
     except json.JSONDecodeError:
-        # Fallback structure
+        # Fallback: create 1 lesson per chunk, grouped into chapters of ~4
+        chapters = []
+        lessons_per_chapter = 4
+        for ch_start in range(0, num_chunks, lessons_per_chapter):
+            ch_end = min(ch_start + lessons_per_chapter, num_chunks)
+            ch_index = len(chapters) + 1
+            lessons = []
+            for i in range(ch_start, ch_end):
+                s = chunk_summaries[i]
+                topics = s.get("topics", ["Main Content"])
+                lessons.append({
+                    "title": topics[0] if topics else f"Section {i + 1}",
+                    "topics_to_cover": topics,
+                    "source_chunk_indices": [i]
+                })
+            chapters.append({
+                "title": f"Chapter {ch_index}",
+                "description": chunk_summaries[ch_start].get("summary", "")[:200],
+                "lessons": lessons
+            })
+        return {"chapters": chapters}
+
+
+def verify_and_repair_coverage(
+    course_structure: Dict[str, Any],
+    num_chunks: int,
+    chunk_summaries: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Verify that all source chunks are referenced in the course structure.
+    Repairs coverage gaps by appending missing chunks as new lessons.
+    Returns dict with 'structure', 'coverage_pct', and 'missing_chunks'.
+    """
+    # Collect all referenced chunk indices
+    referenced = set()
+    for chapter in course_structure.get("chapters", []):
+        for lesson in chapter.get("lessons", []):
+            for idx in lesson.get("source_chunk_indices", []):
+                if isinstance(idx, (int, float)):
+                    referenced.add(int(idx))
+                elif isinstance(idx, str) and idx.isdigit():
+                    referenced.add(int(idx))
+
+    all_indices = set(range(num_chunks))
+    missing = sorted(all_indices - referenced)
+    coverage_pct = round((len(referenced & all_indices) / num_chunks) * 100, 1) if num_chunks > 0 else 100.0
+
+    print(f"[AI] Coverage check: {coverage_pct}% ({num_chunks - len(missing)}/{num_chunks} chunks referenced)")
+
+    if not missing:
         return {
-            "chapters": [
-                {
-                    "title": f"Chapter {i+1}",
-                    "description": summary.get("summary", "")[:200],
-                    "lessons": [
-                        {
-                            "title": topic,
-                            "topics_to_cover": [topic],
-                            "source_chunk_indices": [i]
-                        }
-                        for topic in summary.get("topics", ["Main Content"])[:3]
-                    ]
-                }
-                for i, summary in enumerate(chunk_summaries[:5])
-            ]
+            "structure": course_structure,
+            "coverage_pct": coverage_pct,
+            "missing_chunks": []
         }
+
+    print(f"[AI] Missing chunk indices: {missing}")
+
+    chapters = course_structure.get("chapters", [])
+
+    if len(missing) <= 3 and chapters:
+        # Append to last chapter
+        last_chapter = chapters[-1]
+        for idx in missing:
+            s = chunk_summaries[idx] if idx < len(chunk_summaries) else {}
+            topics = s.get("topics", ["Additional Content"])
+            last_chapter["lessons"].append({
+                "title": topics[0] if topics else f"Section {idx + 1}",
+                "topics_to_cover": topics,
+                "source_chunk_indices": [idx]
+            })
+        print(f"[AI] Appended {len(missing)} lessons to last chapter")
+    else:
+        # Create new chapter(s) for missing content
+        lessons_per_chapter = 4
+        for ch_start_idx in range(0, len(missing), lessons_per_chapter):
+            ch_end_idx = min(ch_start_idx + lessons_per_chapter, len(missing))
+            batch = missing[ch_start_idx:ch_end_idx]
+            lessons = []
+            for idx in batch:
+                s = chunk_summaries[idx] if idx < len(chunk_summaries) else {}
+                topics = s.get("topics", ["Additional Content"])
+                lessons.append({
+                    "title": topics[0] if topics else f"Section {idx + 1}",
+                    "topics_to_cover": topics,
+                    "source_chunk_indices": [idx]
+                })
+            ch_num = ch_start_idx // lessons_per_chapter + 1
+            suffix = f" (Part {ch_num})" if len(missing) > lessons_per_chapter else ""
+            chapters.append({
+                "title": f"Additional Coverage{suffix}",
+                "description": "Additional content from the source material",
+                "lessons": lessons
+            })
+        print(f"[AI] Created additional chapter(s) for {len(missing)} missing chunks")
+
+    course_structure["chapters"] = chapters
+    # Recalculate coverage
+    new_referenced = set()
+    for chapter in chapters:
+        for lesson in chapter.get("lessons", []):
+            for idx in lesson.get("source_chunk_indices", []):
+                if isinstance(idx, (int, float)):
+                    new_referenced.add(int(idx))
+                elif isinstance(idx, str) and idx.isdigit():
+                    new_referenced.add(int(idx))
+    coverage_pct = round((len(new_referenced & all_indices) / num_chunks) * 100, 1) if num_chunks > 0 else 100.0
+
+    return {
+        "structure": course_structure,
+        "coverage_pct": coverage_pct,
+        "missing_chunks": missing
+    }
 
 
 def extract_json_from_response(response: str) -> dict:
@@ -374,7 +528,7 @@ async def generate_lesson_content_preserve(
 
 Lesson: {lesson_title}
 Topics to cover: {', '.join(topics)}
-Source Content: {source_text[:15000]}
+Source Content: {source_text[:24000]}
 
 Generate this lesson structure as valid JSON:
 
@@ -450,7 +604,7 @@ async def generate_lesson_content_enhance(
 
 Lesson: {lesson_title}
 Topics to cover: {', '.join(topics)}
-Source Content: {source_text[:15000]}
+Source Content: {source_text[:24000]}
 
 Generate this lesson structure as valid JSON:
 
@@ -850,12 +1004,20 @@ async def process_book_to_course(
     chunks = chunk_text(book_text)
     await report_progress(f"Split into {len(chunks)} sections")
 
-    # Step 2: Summarize each chunk
-    chunk_summaries = []
-    for i, chunk in enumerate(chunks):
-        await report_progress(f"Analyzing section {i + 1} of {len(chunks)}...")
-        summary = await summarize_chunk(chunk, i)
-        chunk_summaries.append(summary)
+    # Step 2: Summarize each chunk (in parallel batches for speed)
+    import asyncio as _asyncio
+    chunk_summaries = [None] * len(chunks)
+    batch_size = 5
+    for batch_start in range(0, len(chunks), batch_size):
+        batch_end = min(batch_start + batch_size, len(chunks))
+        await report_progress(f"Analyzing sections {batch_start + 1}-{batch_end} of {len(chunks)}...")
+
+        async def _summarize(idx, text):
+            result = await summarize_chunk(text, idx)
+            chunk_summaries[idx] = result
+
+        tasks = [_summarize(i, chunks[i]) for i in range(batch_start, batch_end)]
+        await _asyncio.gather(*tasks)
 
     # Step 3: Quality detection - determine PRESERVE or ENHANCE mode
     await report_progress("Evaluating content quality...")
@@ -887,9 +1049,16 @@ async def process_book_to_course(
     # Step 5: Generate course structure
     await report_progress("Designing course structure...")
     course_structure = await generate_course_structure(book_overview, chunk_summaries)
+
+    # Step 5b: Verify and repair coverage
+    await report_progress("Verifying source coverage...")
+    coverage_result = verify_and_repair_coverage(course_structure, len(chunks), chunk_summaries)
+    course_structure = coverage_result["structure"]
+    coverage_pct = coverage_result["coverage_pct"]
+
     num_chapters = len(course_structure.get("chapters", []))
     num_lessons = sum(len(ch.get("lessons", [])) for ch in course_structure.get("chapters", []))
-    await report_progress(f"Created {num_chapters} chapters with {num_lessons} lessons")
+    await report_progress(f"Created {num_chapters} chapters with {num_lessons} lessons (coverage: {coverage_pct}%)")
 
     # Step 6: Generate content and quizzes for each lesson
     lesson_count = 0
@@ -927,9 +1096,10 @@ async def process_book_to_course(
             quiz = await generate_quiz(lesson["title"], content, source_text, quiz_type)
             lesson["quiz"] = quiz
 
-    await report_progress("Finalizing course...")
+    await report_progress(f"Finalizing course... (coverage: {coverage_pct}%)")
     return {
         "overview": book_overview,
         "structure": course_structure,
-        "quality": quality_result
+        "quality": quality_result,
+        "coverage_pct": coverage_pct
     }

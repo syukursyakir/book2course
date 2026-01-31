@@ -146,15 +146,20 @@ class BookQueueWorker:
             overview = course_data["overview"]
             structure = course_data["structure"]
             quality = course_data.get("quality", {})
+            coverage_pct = course_data.get("coverage_pct", 0)
 
             # Create course
             await on_progress("Saving course to database...")
+            description = (
+                f"A course generated from {book_title}. "
+                f"Main themes: {', '.join(overview.get('main_themes', [])[:3])}. "
+                f"Coverage: {coverage_pct}% of source material"
+            )
             course = await create_course(
                 book_id=book_id,
                 user_id=user_id,
                 title=overview.get("title", book_title),
-                description=f"A course generated from {book_title}. " +
-                           f"Main themes: {', '.join(overview.get('main_themes', [])[:3])}",
+                description=description,
                 structure_json=structure,
                 quality_mode=quality.get("mode", "ENHANCE"),
                 quality_scores=quality
