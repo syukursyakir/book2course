@@ -33,13 +33,18 @@ interface QuizProps {
   onComplete: (score: number, total: number) => void
 }
 
-// Helper to get text from any value
+// Helper to get text from any value, stripping letter prefixes like "A) ", "B. "
 function getOptionText(option: AnyValue): string {
-  if (typeof option === 'string') return option
-  if (typeof option === 'object' && option !== null) {
-    return option.text || option.content || option.description || option.title || JSON.stringify(option)
+  let text: string
+  if (typeof option === 'string') {
+    text = option
+  } else if (typeof option === 'object' && option !== null) {
+    text = option.text || option.content || option.description || option.title || JSON.stringify(option)
+  } else {
+    text = String(option)
   }
-  return String(option)
+  // Strip leading letter prefix (e.g., "A) ", "B. ", "C: ") since the UI adds its own
+  return text.replace(/^[A-Da-d][\).\:]\s*/, '')
 }
 
 // Get difficulty info

@@ -75,32 +75,37 @@ async def fix_lesson_content(user: dict = Depends(require_admin)):
 @router.delete("/courses/{course_id}")
 async def delete_error_course(course_id: str, user: dict = Depends(require_admin)):
     """Delete a course (or error book shown as course) by ID."""
-    client = get_supabase_client()
+    try:
+        client = get_supabase_client()
 
-    deleted_items = []
+        deleted_items = []
 
-    # Try to find and delete from courses table
-    course = client.table("courses").select("id, status, book_id").eq("id", course_id).execute()
-    if course.data:
-        book_id = course.data[0].get("book_id")
-        client.table("courses").delete().eq("id", course_id).execute()
-        deleted_items.append(f"course:{course_id}")
-        if book_id:
-            client.table("books").delete().eq("id", book_id).execute()
-            deleted_items.append(f"book:{book_id}")
+        # Try to find and delete from courses table
+        course = client.table("courses").select("id, book_id").eq("id", course_id).execute()
+        if course.data:
+            book_id = course.data[0].get("book_id")
+            client.table("courses").delete().eq("id", course_id).execute()
+            deleted_items.append(f"course:{course_id}")
+            if book_id:
+                client.table("books").delete().eq("id", book_id).execute()
+                deleted_items.append(f"book:{book_id}")
 
-    # Also try to find and delete from books table (error books show as courses in API)
-    book = client.table("books").select("id, status").eq("id", course_id).execute()
-    if book.data:
-        # Delete any course referencing this book first
-        client.table("courses").delete().eq("book_id", course_id).execute()
-        client.table("books").delete().eq("id", course_id).execute()
-        deleted_items.append(f"book:{course_id}")
+        # Also try to find and delete from books table (error books show as courses in API)
+        book = client.table("books").select("id, status").eq("id", course_id).execute()
+        if book.data:
+            # Delete any course referencing this book first
+            client.table("courses").delete().eq("book_id", course_id).execute()
+            client.table("books").delete().eq("id", course_id).execute()
+            deleted_items.append(f"book:{course_id}")
 
-    if not deleted_items:
-        raise HTTPException(status_code=404, detail="Course or book not found")
+        if not deleted_items:
+            raise HTTPException(status_code=404, detail="Course or book not found")
 
-    return {"deleted": True, "items": deleted_items}
+        return {"deleted": True, "items": deleted_items}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Delete error: {str(e)}")
 
 
 @router.post("/reprocess/{book_id}")
@@ -134,32 +139,30 @@ async def reprocess_book(book_id: str, user: dict = Depends(require_admin)):
 @router.get("/stats")
 async def get_admin_stats(user: dict = Depends(require_admin)):
     """Get admin statistics."""
-    client = get_supabase_client()
+    try:
+        client = get_supabase_client()
 
-    # Count by status
-    books = client.table("books").select("status").execute()
-    courses = client.table("courses").select("status").execute()
-    lessons = client.table("lessons").select("id").execute()
-    users = client.table("profiles").select("user_id, tier").execute()
+        # Count by status
+        books = client.table("books").select("status").execute()
+        courses = client.table("courses").select("id").execute()
+        lessons = client.table("lessons").select("id").execute()
+        users = client.table("profiles").select("user_id, tier").execute()
 
-    book_stats = {}
-    for b in books.data or []:
-        status = b["status"]
-        book_stats[status] = book_stats.get(status, 0) + 1
+        book_stats = {}
+        for b in books.data or []:
+            status = b["status"]
+            book_stats[status] = book_stats.get(status, 0) + 1
 
-    course_stats = {}
-    for c in courses.data or []:
-        status = c["status"]
-        course_stats[status] = course_stats.get(status, 0) + 1
+        tier_stats = {}
+        for u in users.data or []:
+            tier = u.get("tier", "free")
+            tier_stats[tier] = tier_stats.get(tier, 0) + 1
 
-    tier_stats = {}
-    for u in users.data or []:
-        tier = u.get("tier", "free")
-        tier_stats[tier] = tier_stats.get(tier, 0) + 1
-
-    return {
-        "books": {"total": len(books.data or []), "by_status": book_stats},
-        "courses": {"total": len(courses.data or []), "by_status": course_stats},
-        "lessons": {"total": len(lessons.data or [])},
-        "users": {"total": len(users.data or []), "by_tier": tier_stats}
-    }
+        return {
+            "books": {"total": len(books.data or []), "by_status": book_stats},
+            "courses": {"total": len(courses.data or [])},
+            "lessons": {"total": len(lessons.data or [])},
+            "users": {"total": len(users.data or []), "by_tier": tier_stats}
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Stats error: {str(e)}")

@@ -106,7 +106,7 @@ def fix_error_courses():
 
     # Get courses in error state
     print("\nChecking for error courses...")
-    result = client.table("courses").select("id, title, status, processing_step").eq("status", "error").execute()
+    result = client.table("books").select("id, title, status, processing_step").eq("status", "error").execute()
 
     courses = result.data or []
     print(f"Found {len(courses)} courses in error state")
